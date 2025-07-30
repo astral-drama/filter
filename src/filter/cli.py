@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from dotenv import load_dotenv
+import yaml
 
 
 def render_template(template_path: str, context: dict = None) -> str:
@@ -60,12 +61,32 @@ def main():
         help="Path to .env file for template variables (default: .env in current directory)"
     )
     
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to YAML config file for template variables (default: config.yaml)"
+    )
+    
     args = parser.parse_args()
     
-    # Load environment variables from .env file
+    # Load template variables from multiple sources
     context = {}
     
-    # Try to load from .env file
+    # 1. Load from YAML config file (lowest priority)
+    if Path(args.config).exists():
+        try:
+            with open(args.config, 'r') as f:
+                config_data = yaml.safe_load(f)
+                if config_data:
+                    context.update(config_data)
+        except yaml.YAMLError as e:
+            print(f"Error parsing YAML config file {args.config}: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error reading config file {args.config}: {e}", file=sys.stderr)
+            sys.exit(1)
+    
+    # 2. Load from .env file (medium priority - overrides config)
     env_file = args.env_file or ".env"
     if Path(env_file).exists():
         load_dotenv(env_file)
@@ -76,7 +97,7 @@ def main():
         print(f"Error: .env file not found: {args.env_file}", file=sys.stderr)
         sys.exit(1)
     
-    # Parse command line template variables (these override .env variables)
+    # 3. Parse command line template variables (highest priority - overrides everything)
     for var in args.var:
         if "=" not in var:
             print(f"Error: Invalid variable format '{var}'. Use key=value format.", file=sys.stderr)
