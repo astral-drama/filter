@@ -24,7 +24,11 @@ classifiers = [
 ]
 dependencies = [
     "jinja2",
+    "python-dotenv",
 ]
+
+[project.scripts]
+filter = "filter.cli:main"
 
 [project.optional-dependencies]
 dev = [

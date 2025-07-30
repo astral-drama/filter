@@ -126,3 +126,6 @@ cython_debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Project specific
+workspaces/
