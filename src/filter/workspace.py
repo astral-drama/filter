@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from .config import get_workspaces_directory, get_templates_directory, get_kanban_directory
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,13 +74,13 @@ def list_templates(template_dir: Optional[Path] = None) -> List[Dict]:
     """List available workspace templates.
 
     Args:
-        template_dir: Directory containing templates (defaults to docker/templates)
+        template_dir: Directory containing templates (defaults to configured templates directory)
 
     Returns:
         List of template metadata dictionaries
     """
     if template_dir is None:
-        template_dir = Path("docker/templates")
+        template_dir = get_templates_directory()
 
     templates = []
     if not template_dir.exists():
@@ -116,7 +118,7 @@ def create_workspace(
 
     Args:
         workspace_name: Name of the workspace (e.g., 'v3', 'dev', 'test')
-        base_dir: Base directory for workspaces (defaults to ./workspaces)
+        base_dir: Base directory for workspaces (defaults to configured workspaces directory)
         template_name: Template to use (defaults to 'default')
 
     Returns:
@@ -127,7 +129,7 @@ def create_workspace(
         RuntimeError: If unable to find available ports or template not found
     """
     if base_dir is None:
-        base_dir = Path("workspaces")
+        base_dir = get_workspaces_directory()
     
     workspace_dir = base_dir / workspace_name
     
@@ -137,7 +139,7 @@ def create_workspace(
         )
 
     # Find template
-    template_dir = Path("docker/templates") / template_name
+    template_dir = get_templates_directory() / template_name
     if not template_dir.exists():
         raise RuntimeError(f"Template '{template_name}' not found at {template_dir}")
 
@@ -184,7 +186,7 @@ def create_workspace(
     # Ensure shared home directory exists
     home_dir = base_dir.parent / "home"
     if not home_dir.exists():
-        home_dir.mkdir(exist_ok=True)
+        home_dir.mkdir(parents=True, exist_ok=True)
         (home_dir / ".gitkeep").touch()
         logger.info(f"Created shared home directory: {home_dir}")
     
@@ -218,13 +220,13 @@ def create_workspace(
             logger.warning(f"Template file not found: {template_path}")
     
     # Copy kanban directory if it exists
-    kanban_src = Path("kanban")
+    kanban_src = get_kanban_directory()
     if kanban_src.exists():
         kanban_dest = workspace_subdir / "kanban"
         shutil.copytree(kanban_src, kanban_dest)
         logger.info(f"Copied kanban directory to {kanban_dest}")
     else:
-        logger.warning("kanban directory not found, skipping copy")
+        logger.warning(f"kanban directory not found at {kanban_src}, skipping copy")
     
     logger.info(f"Workspace {workspace_name} created successfully at {workspace_dir}")
     logger.info(f"Postgres will be available on port {postgres_port}")
@@ -312,13 +314,13 @@ def stop_workspace(workspace_name: str, base_dir: Optional[Path] = None) -> None
     
     Args:
         workspace_name: Name of the workspace to stop
-        base_dir: Base directory for workspaces (defaults to ./workspaces)
+        base_dir: Base directory for workspaces (defaults to configured workspaces directory)
         
     Raises:
         RuntimeError: If workspace doesn't exist or docker compose fails
     """
     if base_dir is None:
-        base_dir = Path("workspaces")
+        base_dir = get_workspaces_directory()
     
     workspace_dir = base_dir / workspace_name
     
@@ -351,14 +353,14 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
     
     Args:
         workspace_name: Name of the workspace to delete
-        base_dir: Base directory for workspaces (defaults to ./workspaces)
+        base_dir: Base directory for workspaces (defaults to configured workspaces directory)
         force: If True, stop the workspace first if it's running
         
     Raises:
         RuntimeError: If workspace doesn't exist or operations fail
     """
     if base_dir is None:
-        base_dir = Path("workspaces")
+        base_dir = get_workspaces_directory()
     
     workspace_dir = base_dir / workspace_name
     

@@ -17,6 +17,7 @@ from .workspace import (
     stop_workspace,
     delete_workspace
 )
+from .config import get_workspaces_directory
 
 
 def workspace_create_command(args):
@@ -39,9 +40,12 @@ def workspace_create_command(args):
         sys.exit(1)
     
     try:
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
         workspace_path = create_workspace(
             args.name, 
-            Path(args.base_dir), 
+            base_dir, 
             args.template
         )
         print(f"Workspace '{args.name}' created at: {workspace_path}")
@@ -59,7 +63,10 @@ def workspace_down_command(args):
     logging.basicConfig(level=logging.INFO)
     
     try:
-        stop_workspace(args.name, Path(args.base_dir))
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+        stop_workspace(args.name, base_dir)
         print(f"Workspace '{args.name}' stopped successfully")
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -71,7 +78,10 @@ def workspace_delete_command(args):
     logging.basicConfig(level=logging.INFO)
     
     try:
-        delete_workspace(args.name, Path(args.base_dir), args.force)
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+        delete_workspace(args.name, base_dir, args.force)
         print(f"Workspace '{args.name}' deleted successfully")
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -201,8 +211,8 @@ def main():
         help='Template to use (default: default)'
     )
     create_parser.add_argument(
-        '--base-dir', default='workspaces',
-        help='Base directory for workspaces (default: workspaces)'
+        '--base-dir',
+        help='Base directory for workspaces (default: from config)'
     )
     create_parser.add_argument(
         '--list-templates', action='store_true',
@@ -218,8 +228,8 @@ def main():
         'name', help='Workspace name to stop'
     )
     down_parser.add_argument(
-        '--base-dir', default='workspaces',
-        help='Base directory for workspaces (default: workspaces)'
+        '--base-dir',
+        help='Base directory for workspaces (default: from config)'
     )
     down_parser.set_defaults(func=workspace_down_command)
     
@@ -231,8 +241,8 @@ def main():
         'name', help='Workspace name to delete'
     )
     delete_parser.add_argument(
-        '--base-dir', default='workspaces',
-        help='Base directory for workspaces (default: workspaces)'
+        '--base-dir',
+        help='Base directory for workspaces (default: from config)'
     )
     delete_parser.add_argument(
         '--force', '-f', action='store_true',
