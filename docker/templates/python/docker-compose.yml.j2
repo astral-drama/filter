@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:17
-    container_name: postgres
+    container_name: postgres_{{ workspace_name }}
     environment:
       POSTGRES_USER: claude
       POSTGRES_PASSWORD: claudepassword321
@@ -14,7 +14,7 @@ services:
 
   claude:
     build: .
-    container_name: claude
+    container_name: claude_{{ workspace_name }}
     depends_on:
       - postgres
     ports:

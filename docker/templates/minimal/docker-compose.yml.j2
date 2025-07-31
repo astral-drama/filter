@@ -1,7 +1,7 @@
 services:
   claude:
     build: .
-    container_name: claude
+    container_name: claude_{{ workspace_name }}
     ports:
       - "{{ claude_port }}:8000"
     volumes:
