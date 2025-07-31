@@ -105,7 +105,7 @@ Each workspace includes:
 - **Claude container** with development tools (claude-code, Python, Node.js)
 - **Shared home directory** (`../../home`) mounted across all workspaces
 - **Version-specific workspace** (`./workspace`) for project files
-- **Kanban integration** (copies `kanban/` to `workspace/.kanban/`)
+- **Kanban integration** (copies `kanban/` to `workspace/kanban/`)
 - **Environment configuration** (`.env` file with service credentials)
 
 Workspace structure:
@@ -115,7 +115,7 @@ workspaces/<name>/
 ├── docker-compose.yml      # Service orchestration
 └── workspace/
     ├── .env                # Database connection details
-    └── .kanban/            # Copy of kanban directory
+    └── kanban/             # Copy of kanban directory
 ```
 
 To start a workspace:

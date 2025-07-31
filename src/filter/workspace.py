@@ -220,7 +220,7 @@ def create_workspace(
     # Copy kanban directory if it exists
     kanban_src = Path("kanban")
     if kanban_src.exists():
-        kanban_dest = workspace_subdir / ".kanban"
+        kanban_dest = workspace_subdir / "kanban"
         shutil.copytree(kanban_src, kanban_dest)
         logger.info(f"Copied kanban directory to {kanban_dest}")
     else:
@@ -292,6 +292,9 @@ def exec_workspace_command(workspace_name: str, command: List[str], interactive:
 
     if interactive:
         docker_cmd.extend(["-it"])
+
+    # Set working directory to match Dockerfile WORKDIR
+    docker_cmd.extend(["--workdir", "/workspace"])
 
     docker_cmd.extend([container_name] + command)
 

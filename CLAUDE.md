@@ -55,7 +55,7 @@ workspaces/<name>/
 ├── docker-compose.yml      # Postgres + Claude services
 └── workspace/
     ├── .env                # Database credentials
-    └── .kanban/            # Full kanban directory copy
+    └── kanban/             # Full kanban directory copy
         ├── planning/
         ├── in-progress/
         ├── testing/
@@ -199,10 +199,10 @@ INFO:filter.workspace:Using ports - Postgres: 5433, Claude: 8001
 ```
 
 ### Kanban Access
-All kanban files are available in the container at `/workspace/.kanban/`:
-- `/workspace/.kanban/prompts/` - LLM prompts
-- `/workspace/.kanban/stories/` - Story definitions
-- `/workspace/.kanban/planning/` - Planned work
+All kanban files are available in the container at `/workspace/kanban/`:
+- `/workspace/kanban/prompts/` - LLM prompts
+- `/workspace/kanban/stories/` - Story definitions
+- `/workspace/kanban/planning/` - Planned work
 - etc.
 
 ## Workspace Management
@@ -263,7 +263,7 @@ The `../../home` directory is shared across ALL workspaces. Use it for:
 1. **Use descriptive workspace names**: `auth-service`, `frontend-v2`, `migration-testing`
 2. **One workspace per feature/project** for isolation
 3. **Keep shared tools in `home/`** directory
-4. **Use the kanban structure** in `/workspace/.kanban/` for organization
+4. **Use the kanban structure** in `/workspace/kanban/` for organization
 5. **Clean up unused workspaces** to save disk space
 6. **Check ports** with `docker compose ps` before creating new workspaces
 
