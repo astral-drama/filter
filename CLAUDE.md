@@ -133,6 +133,12 @@ workspaces/<name>/
    docker exec -it claude tmux new-session -s claude -c /workspace
    ```
 
+   **Or use the helper commands**:
+   ```bash
+   filter bash myproject        # Interactive bash shell
+   filter claude myproject      # Start Claude session
+   ```
+
 4. **Check services**:
    ```bash
    docker compose ps
@@ -270,12 +276,19 @@ python -m filter.cli workspace <name>                     # Create with default 
 python -m filter.cli workspace <name> --template <type>   # Create with specific template
 python -m filter.cli workspace <name> --base-dir <dir>    # Custom base directory
 
+# Workspace access helpers
+filter bash <workspace-name>                              # Interactive bash shell
+filter claude <workspace-name>                            # Start Claude session
+filter bash <workspace-name> -c "command"                 # Run command and exit
+
 # Template rendering (original functionality)
 python -m filter.cli template <template> [--var key=val] [--config file] [--env-file file]
 
 # Help
 python -m filter.cli --help
 python -m filter.cli workspace --help
+python -m filter.cli bash --help
+python -m filter.cli claude --help
 python -m filter.cli template --help
 ```
 

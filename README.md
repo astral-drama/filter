@@ -129,6 +129,28 @@ Access the Claude container:
 docker exec -it claude tmux new-session -s claude -c /workspace
 ```
 
+### Workspace Access Helpers
+
+Quickly access running workspaces without navigating to workspace directories:
+
+```bash
+# Start interactive bash shell in workspace
+filter bash <workspace-name>
+
+# Start Claude session in workspace  
+filter claude <workspace-name>
+
+# Run commands in workspace
+filter bash <workspace-name> -c "echo 'Hello'; pwd"
+```
+
+Examples:
+```bash
+filter bash v4                           # Interactive bash shell in v4 workspace
+filter claude v4                         # Start Claude with --dangerously-skip-permissions
+filter bash dev -c "cd /workspace && ls" # Run command and exit
+```
+
 ### Template Rendering
 
 Render Jinja2 templates with variable substitution from multiple sources:

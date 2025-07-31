@@ -3,6 +3,7 @@
 import logging
 import shutil
 import socket
+import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -231,3 +232,73 @@ def create_workspace(
     logger.info(f"To start: cd {workspace_dir} && docker compose up")
     
     return workspace_dir
+
+
+def find_workspace_container(workspace_name: str, service: str = "claude") -> str:
+    """Find the container name for a workspace service.
+    
+    Args:
+        workspace_name: Name of the workspace
+        service: Service name (claude, postgres)
+        
+    Returns:
+        Container name
+        
+    Raises:
+        RuntimeError: If container not found or not running
+    """
+    container_name = f"{service}_{workspace_name}"
+    
+    try:
+        # Check if container exists and is running
+        result = subprocess.run(
+            ["docker", "ps", "--filter", f"name={container_name}", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        if container_name in result.stdout:
+            return container_name
+        else:
+            raise RuntimeError(f"Container '{container_name}' not found or not running")
+            
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to check container status: {e}")
+
+
+def exec_workspace_command(workspace_name: str, command: List[str], interactive: bool = None) -> int:
+    """Execute a command in the workspace claude container.
+    
+    Args:
+        workspace_name: Name of the workspace
+        command: Command to execute as list of strings
+        interactive: Whether to run in interactive mode (auto-detected if None)
+        
+    Returns:
+        Exit code from the command
+        
+    Raises:
+        RuntimeError: If workspace/container not found
+    """
+    container_name = find_workspace_container(workspace_name, "claude")
+
+    docker_cmd = ["docker", "exec"]
+
+    # Auto-detect interactive mode if not specified
+    if interactive is None:
+        import sys
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+
+    if interactive:
+        docker_cmd.extend(["-it"])
+
+    docker_cmd.extend([container_name] + command)
+
+    try:
+        # Replace current process with docker exec
+        return subprocess.run(docker_cmd).returncode
+    except KeyboardInterrupt:
+        return 130  # Standard exit code for Ctrl+C
+    except Exception as e:
+        raise RuntimeError(f"Failed to execute command: {e}") from e

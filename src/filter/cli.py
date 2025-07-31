@@ -9,7 +9,12 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from dotenv import load_dotenv
 import yaml
 
-from .workspace import create_workspace, list_templates, render_template
+from .workspace import (
+    create_workspace, 
+    list_templates, 
+    render_template, 
+    exec_workspace_command
+)
 
 
 def workspace_command(args):
@@ -42,6 +47,32 @@ def workspace_command(args):
     except FileExistsError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def claude_command(args):
+    """Handle claude session command."""
+    try:
+        exit_code = exec_workspace_command(
+            args.workspace, 
+            ["claude", "--dangerously-skip-permissions"]
+        )
+        sys.exit(exit_code)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def bash_command(args):
+    """Handle bash shell command."""
+    try:
+        command = ["bash"]
+        if hasattr(args, 'command_args') and args.command_args:
+            command.extend(args.command_args)
+        exit_code = exec_workspace_command(args.workspace, command)
+        sys.exit(exit_code)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -128,6 +159,27 @@ def main():
         help='List available templates'
     )
     workspace_parser.set_defaults(func=workspace_command)
+
+    # Claude command
+    claude_parser = subparsers.add_parser(
+        'claude', help='Start Claude session in workspace'
+    )
+    claude_parser.add_argument(
+        'workspace', help='Workspace name (e.g., v3, dev, test)'
+    )
+    claude_parser.set_defaults(func=claude_command)
+
+    # Bash command
+    bash_parser = subparsers.add_parser(
+        'bash', help='Start bash shell in workspace'
+    )
+    bash_parser.add_argument(
+        'workspace', help='Workspace name (e.g., v3, dev, test)'
+    )
+    bash_parser.add_argument(
+        'command_args', nargs=argparse.REMAINDER, help='Additional arguments for bash'
+    )
+    bash_parser.set_defaults(func=bash_command)
 
     # Template command (original functionality)
     template_parser = subparsers.add_parser(
