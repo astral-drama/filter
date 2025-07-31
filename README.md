@@ -55,16 +55,118 @@ This project creates a unique Kanban workflow where:
 - **Flexible Movement**: Easy story progression using symbolic links
 - **Prompt-Driven Development**: Each story has associated LLM instructions
 
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd filter
+   ```
+
+2. Install the package:
+   ```bash
+   pip install -e .
+   ```
+
+## CLI Usage
+
+The Filter CLI provides commands for template rendering and Docker workspace management.
+
+### Workspace Management
+
+Create isolated Docker environments for development with automatic port detection:
+
+```bash
+# Create a new workspace
+python -m filter.cli workspace <name>
+
+# Examples
+python -m filter.cli workspace v1
+python -m filter.cli workspace dev
+python -m filter.cli workspace test
+```
+
+Each workspace includes:
+- **Postgres container** (finds available port above 5432)
+- **Claude container** with development tools (finds available port above 8000)
+- **Shared home directory** (`../../home`) mounted across all workspaces
+- **Version-specific workspace** (`./workspace`) for project files
+- **Kanban integration** (copies `kanban/` to `workspace/.kanban/`)
+- **Environment configuration** (`.env` file with database credentials)
+
+Workspace structure:
+```
+workspaces/<name>/
+├── Dockerfile              # Claude container definition
+├── docker-compose.yml      # Service orchestration
+└── workspace/
+    ├── .env                # Database connection details
+    └── .kanban/            # Copy of kanban directory
+```
+
+To start a workspace:
+```bash
+cd workspaces/<name>
+docker compose up -d
+```
+
+Access the Claude container:
+```bash
+docker exec -it claude tmux new-session -s claude -c /workspace
+```
+
+### Template Rendering
+
+Render Jinja2 templates with variable substitution from multiple sources:
+
+```bash
+# Basic template rendering
+python -m filter.cli template path/to/template.j2
+
+# With variables
+python -m filter.cli template template.j2 --var key1=value1 --var key2=value2
+
+# With config file
+python -m filter.cli template template.j2 --config myconfig.yaml
+
+# With environment file
+python -m filter.cli template template.j2 --env-file .env.production
+```
+
+Variable precedence (highest to lowest):
+1. Command line variables (`--var`)
+2. Environment file (`.env`)
+3. YAML config file (`config.yaml`)
+
+### Options
+
+**Workspace Command:**
+- `name`: Workspace name (required)
+- `--base-dir`: Base directory for workspaces (default: `workspaces`)
+
+**Template Command:**
+- `template`: Path to template file (required)
+- `--var, -v`: Template variables in `key=value` format (repeatable)
+- `--env-file`: Path to `.env` file for variables
+- `--config`: Path to YAML config file (default: `config.yaml`)
+
 ## Getting Started
 
 1. Create your story directories:
    ```bash
-   mkdir -p planning in-progress testing pr complete prompts stories workspaces
+   mkdir -p kanban/{planning,in-progress,testing,pr,complete,prompts,stories}
    ```
 
-2. Create a new story with git repository details:
+2. Create a workspace for development:
    ```bash
-   cat > stories/feature-name.md << EOF
+   python -m filter.cli workspace dev
+   cd workspaces/dev
+   docker compose up -d
+   ```
+
+3. Create a new story with git repository details:
+   ```bash
+   cat > kanban/stories/feature-name.md << EOF
    # Story Title
    
    Description of the feature...
@@ -77,14 +179,14 @@ This project creates a unique Kanban workflow where:
    EOF
    ```
 
-3. Create corresponding prompt:
+4. Create corresponding prompt:
    ```bash
-   echo "Instructions for LLM to complete this task..." > prompts/feature-name.md
+   echo "Instructions for LLM to complete this task..." > kanban/prompts/feature-name.md
    ```
 
-4. Link story to planning:
+5. Link story to planning:
    ```bash
-   ln -s ../stories/feature-name.md planning/
+   ln -s ../stories/feature-name.md kanban/planning/
    ```
 
 ## Benefits

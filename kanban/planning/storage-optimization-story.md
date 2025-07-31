@@ -1,0 +1,1 @@
+../stories/storage-optimization-story.md
