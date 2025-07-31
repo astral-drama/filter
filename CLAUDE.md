@@ -7,23 +7,42 @@ This document provides examples and guidance for Claude to effectively work with
 To create a new Docker workspace for development, use the CLI command:
 
 ```bash
-python -m filter.cli workspace <name>
+python -m filter.cli workspace <name> [--template <template-name>]
+```
+
+### Template Selection
+
+```bash
+# List available templates
+python -m filter.cli workspace --list-templates
+
+# Create with default template (full-stack: Postgres + Claude)
+python -m filter.cli workspace myproject
+
+# Create with specific templates
+python -m filter.cli workspace frontend --template minimal  # Claude only
+python -m filter.cli workspace datalab --template python    # Python + Jupyter + Postgres
 ```
 
 ### Examples
 
 ```bash
-# Create workspace for version 4
-python -m filter.cli workspace v4
+# Full-stack development workspaces
+python -m filter.cli workspace v4                # Default template
+python -m filter.cli workspace api --template default
 
-# Create development workspace
-python -m filter.cli workspace dev
+# Lightweight workspaces (no database)
+python -m filter.cli workspace ui --template minimal
+python -m filter.cli workspace frontend --template minimal
 
-# Create testing workspace  
-python -m filter.cli workspace test
+# Python/Data Science workspaces  
+python -m filter.cli workspace ml --template python
+python -m filter.cli workspace analytics --template python
+python -m filter.cli workspace jupyter --template python
 
-# Create workspace for specific feature
+# Project-specific workspaces
 python -m filter.cli workspace auth-feature
+python -m filter.cli workspace microservice --template minimal
 ```
 
 ## Workspace Structure
@@ -46,26 +65,51 @@ workspaces/<name>/
         └── stories/
 ```
 
+## Template Types
+
+### default Template (Full-stack)
+- **Services**: PostgreSQL 17 + Claude development container
+- **Use case**: General full-stack development with database needs
+- **Tools**: Node.js, Python, claude-code, PostgreSQL client, development tools
+
+### minimal Template (Lightweight)
+- **Services**: Claude development container only
+- **Use case**: Frontend work, simple development tasks, when database isn't needed
+- **Tools**: Node.js, Python, claude-code, development tools (no PostgreSQL client)
+
+### python Template (Data Science)
+- **Services**: PostgreSQL 17 + Claude container + Jupyter notebook server
+- **Use case**: Python development, data science, machine learning projects
+- **Tools**: Enhanced Python toolchain, Jupyter, testing tools, database
+
+> 📖 **Complete template specifications**: See [`docker/README.md`](docker/README.md) for detailed template documentation.
+
 ## Container Details
 
-### Postgres Container
+### Postgres Container (default, python templates)
 - **Image**: postgres:17
 - **Container name**: postgres (always the same)
 - **Database**: claude / claude / claudepassword321
 - **Port**: Auto-detected (starts from 5433)
 - **Volume**: `postgres_<workspace>_data`
 
-### Claude Container  
+### Claude Container (all templates)
 - **Base**: debian:bookworm-slim
 - **Container name**: claude (always the same)
 - **Port**: Auto-detected (starts from 8001)
-- **Tools included**:
+- **Common tools**:
   - Node.js LTS + npm
   - Python 3 + pip + uv + ruff
   - claude-code CLI
   - tmux, nano, emacs
-  - postgresql-client
   - sudo (passwordless for claude user)
+- **Template-specific tools**:
+  - postgresql-client (default, python templates)
+  - Enhanced Python tools (python template)
+
+### Jupyter Container (python template only)
+- **Port**: Auto-detected (starts from 8888)
+- **Access**: Available at `http://localhost:<jupyter_port>`
 
 ### Mounts
 - `../../home:/home/claude` - Shared home across all workspaces
@@ -96,8 +140,9 @@ workspaces/<name>/
 
 ## Environment Variables
 
-Each workspace includes these environment variables in `.env`:
+Environment variables vary by template:
 
+### default Template
 ```bash
 DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
 POSTGRES_HOST=postgres
@@ -108,6 +153,26 @@ POSTGRES_DB=claude
 CLAUDE_HOST_PORT=8001      # Auto-detected
 CLAUDE_INTERNAL_PORT=8000
 POSTGRES_HOST_PORT=5433    # Auto-detected
+```
+
+### minimal Template
+```bash
+CLAUDE_HOST_PORT=8001      # Auto-detected
+CLAUDE_INTERNAL_PORT=8000
+```
+
+### python Template
+```bash
+DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=claude
+POSTGRES_PASSWORD=claudepassword321
+POSTGRES_DB=claude
+CLAUDE_HOST_PORT=8001      # Auto-detected
+CLAUDE_INTERNAL_PORT=8000
+POSTGRES_HOST_PORT=5433    # Auto-detected
+JUPYTER_PORT=8888          # Auto-detected
 ```
 
 ## Common Development Patterns
@@ -161,9 +226,9 @@ rm -rf workspaces/<name>
 ### Multiple Workspaces
 You can run multiple workspaces simultaneously since ports are auto-detected:
 ```bash
-python -m filter.cli workspace v1    # Gets ports 5433, 8001
-python -m filter.cli workspace v2    # Gets ports 5434, 8002  
-python -m filter.cli workspace v3    # Gets ports 5435, 8003
+python -m filter.cli workspace api --template default   # Gets ports 5433, 8001
+python -m filter.cli workspace ui --template minimal    # Gets port 8002  
+python -m filter.cli workspace ml --template python     # Gets ports 5434, 8003, 8888
 ```
 
 ## Troubleshooting
@@ -199,8 +264,11 @@ The `../../home` directory is shared across ALL workspaces. Use it for:
 ## CLI Command Reference
 
 ```bash
-# Create workspace
-python -m filter.cli workspace <name> [--base-dir workspaces]
+# Workspace commands
+python -m filter.cli workspace --list-templates           # List available templates
+python -m filter.cli workspace <name>                     # Create with default template
+python -m filter.cli workspace <name> --template <type>   # Create with specific template
+python -m filter.cli workspace <name> --base-dir <dir>    # Custom base directory
 
 # Template rendering (original functionality)
 python -m filter.cli template <template> [--var key=val] [--config file] [--env-file file]
@@ -212,3 +280,9 @@ python -m filter.cli template --help
 ```
 
 This workspace system provides isolated, reproducible development environments with automatic port management and full kanban integration.
+
+---
+
+> 📖 **Additional Resources:**
+> - [`docker/README.md`](docker/README.md) - Complete template documentation and customization guide
+> - [`README.md`](README.md) - Main project documentation and getting started guide

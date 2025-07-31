@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    environment:
+      POSTGRES_USER: claude
+      POSTGRES_PASSWORD: claudepassword321
+      POSTGRES_DB: claude
+    ports:
+      - "{{ postgres_port }}:5432"
+    volumes:
+      - postgres_{{ workspace_name }}_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  claude:
+    build: .
+    container_name: claude
+    depends_on:
+      - postgres
+    ports:
+      - "{{ claude_port }}:8000"
+    volumes:
+      - ../../home:/home/claude
+      - ./workspace:/workspace
+    environment:
+      - DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=claude
+      - POSTGRES_PASSWORD=claudepassword321
+      - POSTGRES_DB=claude
+      - CLAUDE_HOST_PORT={{ claude_port }}
+      - CLAUDE_INTERNAL_PORT=8000
+      - POSTGRES_HOST_PORT={{ postgres_port }}
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+volumes:
+  postgres_{{ workspace_name }}_data:

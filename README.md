@@ -74,25 +74,39 @@ The Filter CLI provides commands for template rendering and Docker workspace man
 
 ### Workspace Management
 
-Create isolated Docker environments for development with automatic port detection:
+Create isolated Docker environments for development with automatic port detection and multiple template options:
 
 ```bash
-# Create a new workspace
+# List available templates
+python -m filter.cli workspace --list-templates
+
+# Create workspace with default template (full-stack)
 python -m filter.cli workspace <name>
 
+# Create workspace with specific template
+python -m filter.cli workspace <name> --template <template-name>
+
 # Examples
-python -m filter.cli workspace v1
-python -m filter.cli workspace dev
-python -m filter.cli workspace test
+python -m filter.cli workspace dev                    # Default: Postgres + Claude
+python -m filter.cli workspace frontend --template minimal  # Claude only
+python -m filter.cli workspace ml --template python         # Python + Jupyter + Postgres
 ```
 
+#### Available Templates
+
+- **default**: Full-stack development environment with PostgreSQL 17 and Claude container
+- **minimal**: Lightweight environment with just Claude container (no database)
+- **python**: Python-focused environment with PostgreSQL, Claude, and Jupyter notebook server
+
+> 📖 **Detailed template documentation**: See [`docker/README.md`](docker/README.md) for complete template specifications, customization options, and creating custom templates.
+
 Each workspace includes:
-- **Postgres container** (finds available port above 5432)
-- **Claude container** with development tools (finds available port above 8000)
+- **Auto-detected ports** to avoid conflicts between multiple workspaces
+- **Claude container** with development tools (claude-code, Python, Node.js)
 - **Shared home directory** (`../../home`) mounted across all workspaces
 - **Version-specific workspace** (`./workspace`) for project files
 - **Kanban integration** (copies `kanban/` to `workspace/.kanban/`)
-- **Environment configuration** (`.env` file with database credentials)
+- **Environment configuration** (`.env` file with service credentials)
 
 Workspace structure:
 ```
@@ -142,7 +156,9 @@ Variable precedence (highest to lowest):
 
 **Workspace Command:**
 - `name`: Workspace name (required)
+- `--template, -t`: Template to use (default: `default`)
 - `--base-dir`: Base directory for workspaces (default: `workspaces`)
+- `--list-templates`: List available templates
 
 **Template Command:**
 - `template`: Path to template file (required)

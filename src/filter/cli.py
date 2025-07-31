@@ -9,43 +9,34 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from dotenv import load_dotenv
 import yaml
 
-from .workspace import create_workspace
-
-
-def render_template(template_path: str, context: dict = None) -> str:
-    """Render a Jinja2 template with the given context.
-    
-    Args:
-        template_path: Path to the template file
-        context: Dictionary of variables to use in template rendering
-        
-    Returns:
-        Rendered template content
-        
-    Raises:
-        FileNotFoundError: If template file doesn't exist
-    """
-    template_file = Path(template_path)
-    
-    if not template_file.exists():
-        raise FileNotFoundError(f"Template file not found: {template_path}")
-    
-    # Set up Jinja2 environment
-    env = Environment(
-        loader=FileSystemLoader(template_file.parent),
-        autoescape=select_autoescape(['html', 'xml'])
-    )
-    
-    # Load and render template
-    template = env.get_template(template_file.name)
-    return template.render(context or {})
+from .workspace import create_workspace, list_templates, render_template
 
 
 def workspace_command(args):
     """Handle workspace creation command."""
     logging.basicConfig(level=logging.INFO)
+    
+    if args.list_templates:
+        templates = list_templates()
+        if not templates:
+            print("No templates found in docker/templates/")
+            return
+            
+        print("Available workspace templates:")
+        for template in templates:
+            print(f"  {template['name']}: {template.get('description', 'No description')}")
+        return
+    
+    if not args.name:
+        print("Error: workspace name is required", file=sys.stderr)
+        sys.exit(1)
+    
     try:
-        workspace_path = create_workspace(args.name, Path(args.base_dir))
+        workspace_path = create_workspace(
+            args.name, 
+            Path(args.base_dir), 
+            args.template
+        )
         print(f"Workspace '{args.name}' created at: {workspace_path}")
         print(f"To start: cd {workspace_path} && docker compose up")
     except FileExistsError as e:
@@ -122,11 +113,19 @@ def main():
         'workspace', help='Create a new Docker workspace'
     )
     workspace_parser.add_argument(
-        'name', help='Workspace name (e.g., v3, dev, test)'
+        'name', nargs='?', help='Workspace name (e.g., v3, dev, test)'
+    )
+    workspace_parser.add_argument(
+        '--template', '-t', default='default',
+        help='Template to use (default: default)'
     )
     workspace_parser.add_argument(
         '--base-dir', default='workspaces',
         help='Base directory for workspaces (default: workspaces)'
+    )
+    workspace_parser.add_argument(
+        '--list-templates', action='store_true',
+        help='List available templates'
     )
     workspace_parser.set_defaults(func=workspace_command)
 

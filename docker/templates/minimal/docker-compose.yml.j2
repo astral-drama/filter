@@ -1,0 +1,15 @@
+services:
+  claude:
+    build: .
+    container_name: claude
+    ports:
+      - "{{ claude_port }}:8000"
+    volumes:
+      - ../../home:/home/claude
+      - ./workspace:/workspace
+    environment:
+      - CLAUDE_HOST_PORT={{ claude_port }}
+      - CLAUDE_INTERNAL_PORT=8000
+    restart: unless-stopped
+    tty: true
+    stdin_open: true

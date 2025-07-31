@@ -1,0 +1,20 @@
+name: minimal
+description: Lightweight development environment with just Claude container
+author: Filter CLI
+version: 1.0.0
+
+services:
+  - name: claude
+    description: Claude development container with basic toolchain
+    port_range: 8001-8100
+
+features:
+  - claude-code
+  - python
+  - nodejs
+  - development-tools
+
+files:
+  - Dockerfile.j2
+  - docker-compose.yml.j2
+  - .env.j2

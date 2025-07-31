@@ -3,10 +3,41 @@
 import logging
 import shutil
 import socket
+import yaml
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 logger = logging.getLogger(__name__)
+
+
+def render_template(template_path: str, context: dict = None) -> str:
+    """Render a Jinja2 template with the given context.
+
+    Args:
+        template_path: Path to the template file
+        context: Dictionary of variables to use in template rendering
+
+    Returns:
+        Rendered template content
+
+    Raises:
+        FileNotFoundError: If template file doesn't exist
+    """
+    template_file = Path(template_path)
+
+    if not template_file.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+
+    # Set up Jinja2 environment
+    env = Environment(
+        loader=FileSystemLoader(template_file.parent),
+        autoescape=select_autoescape(['html', 'xml'])
+    )
+
+    # Load and render template
+    template = env.get_template(template_file.name)
+    return template.render(context or {})
 
 
 def find_available_port(start_port: int, max_attempts: int = 100) -> int:
@@ -36,21 +67,63 @@ def find_available_port(start_port: int, max_attempts: int = 100) -> int:
     )
 
 
+def list_templates(template_dir: Optional[Path] = None) -> List[Dict]:
+    """List available workspace templates.
+
+    Args:
+        template_dir: Directory containing templates (defaults to docker/templates)
+
+    Returns:
+        List of template metadata dictionaries
+    """
+    if template_dir is None:
+        template_dir = Path("docker/templates")
+
+    templates = []
+    if not template_dir.exists():
+        logger.warning(f"Template directory not found: {template_dir}")
+        return templates
+
+    for template_path in template_dir.iterdir():
+        if template_path.is_dir():
+            metadata_file = template_path / "template.yaml"
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file) as f:
+                        metadata = yaml.safe_load(f)
+                        metadata["path"] = template_path
+                        templates.append(metadata)
+                except Exception as e:
+                    logger.warning(f"Error reading template {template_path}: {e}")
+            else:
+                # Basic template without metadata
+                templates.append({
+                    "name": template_path.name,
+                    "description": f"Template: {template_path.name}",
+                    "path": template_path
+                })
+
+    return templates
+
+
 def create_workspace(
-    workspace_name: str, base_dir: Optional[Path] = None
+    workspace_name: str,
+    base_dir: Optional[Path] = None,
+    template_name: str = "default"
 ) -> Path:
-    """Create a new Docker workspace with postgres and claude containers.
+    """Create a new Docker workspace using specified template.
 
     Args:
         workspace_name: Name of the workspace (e.g., 'v3', 'dev', 'test')
         base_dir: Base directory for workspaces (defaults to ./workspaces)
+        template_name: Template to use (defaults to 'default')
 
     Returns:
         Path to created workspace directory
 
     Raises:
         FileExistsError: If workspace already exists
-        RuntimeError: If unable to find available ports
+        RuntimeError: If unable to find available ports or template not found
     """
     if base_dir is None:
         base_dir = Path("workspaces")
@@ -62,15 +135,45 @@ def create_workspace(
             f"Workspace {workspace_name} already exists at {workspace_dir}"
         )
 
-    logger.info(f"Creating workspace: {workspace_name}")
+    # Find template
+    template_dir = Path("docker/templates") / template_name
+    if not template_dir.exists():
+        raise RuntimeError(f"Template '{template_name}' not found at {template_dir}")
 
-    # Find available ports
+    logger.info(f"Creating workspace: {workspace_name} using template: {template_name}")
+
+    # Load template metadata
+    template_metadata = {}
+    metadata_file = template_dir / "template.yaml"
+    if metadata_file.exists():
+        with open(metadata_file) as f:
+            template_metadata = yaml.safe_load(f)
+
+    # Find available ports based on template requirements
+    context = {"workspace_name": workspace_name}
+    
+    # Default port detection
     postgres_port = find_available_port(5433)
     claude_port = find_available_port(8001)
+    
+    context.update({
+        "postgres_port": postgres_port,
+        "claude_port": claude_port
+    })
 
-    logger.info(
-        f"Using ports - Postgres: {postgres_port}, Claude: {claude_port}"
-    )
+    # Additional ports for specific templates
+    if template_name == "python":
+        jupyter_port = find_available_port(8888)
+        context["jupyter_port"] = jupyter_port
+        logger.info(
+            f"Using ports - Postgres: {postgres_port}, Claude: {claude_port}, Jupyter: {jupyter_port}"
+        )
+    elif "postgres" in template_metadata.get("features", []):
+        logger.info(
+            f"Using ports - Postgres: {postgres_port}, Claude: {claude_port}"
+        )
+    else:
+        logger.info(f"Using ports - Claude: {claude_port}")
 
     # Create directory structure
     workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -84,111 +187,34 @@ def create_workspace(
         (home_dir / ".gitkeep").touch()
         logger.info(f"Created shared home directory: {home_dir}")
     
-    # Create Dockerfile
-    dockerfile_content = """FROM debian:bookworm-slim
-
-# Install basic packages
-RUN apt-get update && apt-get install -y \\
-    curl \\
-    ca-certificates \\
-    tmux \\
-    nano \\
-    emacs \\
-    python3 \\
-    python3.11-venv \\
-    python3-pip \\
-    postgresql-client \\
-    sudo \\
-    gnupg \\
-    lsb-release \\
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js LTS via NodeSource repository
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \\
-    && apt-get install -y nodejs
-
-# Install claude code
-RUN npm install -g @anthropic-ai/claude-code
-
-# Install Python tools
-RUN pip3 install --break-system-packages uv ruff
-
-# Create claude user with home directory
-RUN useradd -m -s /bin/bash claude
-
-# Add claude user to sudo group with NOPASSWD access
-RUN echo 'claude ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-
-# Create workspace directory owned by claude
-RUN mkdir -p /workspace && chown claude:claude /workspace
-
-# Switch to claude user
-USER claude
-
-# Set working directory
-WORKDIR /workspace
-
-# Keep container running
-CMD ["tail", "-f", "/dev/null"]"""
+    # Render template files
+    template_files = ["Dockerfile.j2", "docker-compose.yml.j2", ".env.j2"]
     
-    (workspace_dir / "Dockerfile").write_text(dockerfile_content)
-    
-    # Create docker-compose.yml
-    compose_content = f"""services:
-  postgres:
-    image: postgres:17
-    container_name: postgres
-    environment:
-      POSTGRES_USER: claude
-      POSTGRES_PASSWORD: claudepassword321
-      POSTGRES_DB: claude
-    ports:
-      - "{postgres_port}:5432"
-    volumes:
-      - postgres_{workspace_name}_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  claude:
-    build: .
-    container_name: claude
-    depends_on:
-      - postgres
-    ports:
-      - "{claude_port}:8000"
-    volumes:
-      - ../../home:/home/claude
-      - ./workspace:/workspace
-    environment:
-      - DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=claude
-      - POSTGRES_PASSWORD=claudepassword321
-      - POSTGRES_DB=claude
-      - CLAUDE_HOST_PORT={claude_port}
-      - CLAUDE_INTERNAL_PORT=8000
-      - POSTGRES_HOST_PORT={postgres_port}
-    restart: unless-stopped
-    tty: true
-    stdin_open: true
-
-volumes:
-  postgres_{workspace_name}_data:"""
-    
-    (workspace_dir / "docker-compose.yml").write_text(compose_content)
-    
-    # Create .env file
-    env_content = f"""DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_USER=claude
-POSTGRES_PASSWORD=claudepassword321
-POSTGRES_DB=claude
-CLAUDE_HOST_PORT={claude_port}
-CLAUDE_INTERNAL_PORT=8000
-POSTGRES_HOST_PORT={postgres_port}"""
-    
-    (workspace_subdir / ".env").write_text(env_content)
+    for template_file in template_files:
+        template_path = template_dir / template_file
+        if template_path.exists():
+            try:
+                rendered_content = render_template(str(template_path), context)
+                
+                # Determine output path
+                output_name = template_file.replace(".j2", "")
+                if output_name == ".env":
+                    output_path = workspace_subdir / output_name
+                else:
+                    output_path = workspace_dir / output_name
+                
+                output_path.write_text(rendered_content)
+                try:
+                    relative_path = output_path.relative_to(Path.cwd())
+                    logger.info(f"Created {relative_path}")
+                except ValueError:
+                    logger.info(f"Created {output_path}")
+                
+            except Exception as e:
+                logger.error(f"Error rendering template {template_file}: {e}")
+                raise RuntimeError(f"Failed to render template {template_file}: {e}")
+        else:
+            logger.warning(f"Template file not found: {template_path}")
     
     # Copy kanban directory if it exists
     kanban_src = Path("kanban")

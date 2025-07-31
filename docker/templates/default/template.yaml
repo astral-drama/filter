@@ -1,0 +1,24 @@
+name: default
+description: Full-stack development environment with Postgres and Claude
+author: Filter CLI
+version: 1.0.0
+
+services:
+  - name: postgres
+    description: PostgreSQL 17 database
+    port_range: 5433-5500
+  - name: claude
+    description: Claude development container with full toolchain
+    port_range: 8001-8100
+
+features:
+  - postgres
+  - claude-code
+  - python
+  - nodejs
+  - development-tools
+
+files:
+  - Dockerfile.j2
+  - docker-compose.yml.j2
+  - .env.j2
