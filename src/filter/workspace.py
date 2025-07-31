@@ -305,3 +305,97 @@ def exec_workspace_command(workspace_name: str, command: List[str], interactive:
         return 130  # Standard exit code for Ctrl+C
     except Exception as e:
         raise RuntimeError(f"Failed to execute command: {e}") from e
+
+
+def stop_workspace(workspace_name: str, base_dir: Optional[Path] = None) -> None:
+    """Stop a running workspace by bringing down its containers.
+    
+    Args:
+        workspace_name: Name of the workspace to stop
+        base_dir: Base directory for workspaces (defaults to ./workspaces)
+        
+    Raises:
+        RuntimeError: If workspace doesn't exist or docker compose fails
+    """
+    if base_dir is None:
+        base_dir = Path("workspaces")
+    
+    workspace_dir = base_dir / workspace_name
+    
+    if not workspace_dir.exists():
+        raise RuntimeError(f"Workspace '{workspace_name}' not found at {workspace_dir}")
+    
+    compose_file = workspace_dir / "docker-compose.yml"
+    if not compose_file.exists():
+        raise RuntimeError(f"No docker-compose.yml found in {workspace_dir}")
+    
+    logger.info(f"Stopping workspace: {workspace_name}")
+    
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "down"],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.info(f"Workspace {workspace_name} stopped successfully")
+        if result.stdout:
+            logger.info(result.stdout)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to stop workspace {workspace_name}: {e.stderr}")
+
+
+def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force: bool = False) -> None:
+    """Delete a workspace directory and optionally stop it first.
+    
+    Args:
+        workspace_name: Name of the workspace to delete
+        base_dir: Base directory for workspaces (defaults to ./workspaces)
+        force: If True, stop the workspace first if it's running
+        
+    Raises:
+        RuntimeError: If workspace doesn't exist or operations fail
+    """
+    if base_dir is None:
+        base_dir = Path("workspaces")
+    
+    workspace_dir = base_dir / workspace_name
+    
+    if not workspace_dir.exists():
+        raise RuntimeError(f"Workspace '{workspace_name}' not found at {workspace_dir}")
+    
+    # Check if workspace is running
+    is_running = False
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "ps", "-q"],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True
+        )
+        is_running = bool(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        # Ignore errors checking if running
+        pass
+    
+    if is_running and not force:
+        raise RuntimeError(
+            f"Workspace '{workspace_name}' is currently running. "
+            "Stop it first with 'workspace down' or use --force to stop and delete."
+        )
+    
+    if is_running and force:
+        logger.info(f"Force stopping workspace: {workspace_name}")
+        try:
+            stop_workspace(workspace_name, base_dir)
+        except RuntimeError as e:
+            logger.warning(f"Warning: Could not stop workspace cleanly: {e}")
+    
+    logger.info(f"Deleting workspace: {workspace_name}")
+    
+    try:
+        shutil.rmtree(workspace_dir)
+        logger.info(f"Workspace {workspace_name} deleted successfully from {workspace_dir}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete workspace directory {workspace_dir}: {e}")

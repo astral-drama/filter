@@ -7,42 +7,42 @@ This document provides examples and guidance for Claude to effectively work with
 To create a new Docker workspace for development, use the CLI command:
 
 ```bash
-python -m filter.cli workspace <name> [--template <template-name>]
+python -m filter.cli workspace create <name> [--template <template-name>]
 ```
 
 ### Template Selection
 
 ```bash
 # List available templates
-python -m filter.cli workspace --list-templates
+python -m filter.cli workspace create --list-templates
 
 # Create with default template (full-stack: Postgres + Claude)
-python -m filter.cli workspace myproject
+python -m filter.cli workspace create myproject
 
 # Create with specific templates
-python -m filter.cli workspace frontend --template minimal  # Claude only
-python -m filter.cli workspace datalab --template python    # Python + Jupyter + Postgres
+python -m filter.cli workspace create frontend --template minimal  # Claude only
+python -m filter.cli workspace create datalab --template python    # Python + Jupyter + Postgres
 ```
 
 ### Examples
 
 ```bash
 # Full-stack development workspaces
-python -m filter.cli workspace v4                # Default template
-python -m filter.cli workspace api --template default
+python -m filter.cli workspace create v4                # Default template
+python -m filter.cli workspace create api --template default
 
 # Lightweight workspaces (no database)
-python -m filter.cli workspace ui --template minimal
-python -m filter.cli workspace frontend --template minimal
+python -m filter.cli workspace create ui --template minimal
+python -m filter.cli workspace create frontend --template minimal
 
 # Python/Data Science workspaces  
-python -m filter.cli workspace ml --template python
-python -m filter.cli workspace analytics --template python
-python -m filter.cli workspace jupyter --template python
+python -m filter.cli workspace create ml --template python
+python -m filter.cli workspace create analytics --template python
+python -m filter.cli workspace create jupyter --template python
 
 # Project-specific workspaces
-python -m filter.cli workspace auth-feature
-python -m filter.cli workspace microservice --template minimal
+python -m filter.cli workspace create auth-feature
+python -m filter.cli workspace create microservice --template minimal
 ```
 
 ## Workspace Structure
@@ -119,7 +119,7 @@ workspaces/<name>/
 
 1. **Create workspace**:
    ```bash
-   python -m filter.cli workspace myproject
+   python -m filter.cli workspace create myproject
    ```
 
 2. **Start services**:
@@ -214,17 +214,23 @@ docker compose ps
 
 ### Stop Workspace
 ```bash
+python -m filter.cli workspace down <name>
+# OR manually:
 docker compose down
 ```
 
 ### Remove Workspace (keeps data)
 ```bash
+python -m filter.cli workspace delete <name>
+# OR manually:
 docker compose down
 rm -rf workspaces/<name>
 ```
 
-### Remove Workspace + Data
+### Remove Workspace + Data (force delete running workspace)
 ```bash
+python -m filter.cli workspace delete <name> --force
+# OR manually:
 docker compose down -v  # Removes volumes too
 rm -rf workspaces/<name>
 ```
@@ -232,9 +238,9 @@ rm -rf workspaces/<name>
 ### Multiple Workspaces
 You can run multiple workspaces simultaneously since ports are auto-detected:
 ```bash
-python -m filter.cli workspace api --template default   # Gets ports 5433, 8001
-python -m filter.cli workspace ui --template minimal    # Gets port 8002  
-python -m filter.cli workspace ml --template python     # Gets ports 5434, 8003, 8888
+python -m filter.cli workspace create api --template default   # Gets ports 5433, 8001
+python -m filter.cli workspace create ui --template minimal    # Gets port 8002  
+python -m filter.cli workspace create ml --template python     # Gets ports 5434, 8003, 8888
 ```
 
 ## Troubleshooting
@@ -270,11 +276,16 @@ The `../../home` directory is shared across ALL workspaces. Use it for:
 ## CLI Command Reference
 
 ```bash
-# Workspace commands
-python -m filter.cli workspace --list-templates           # List available templates
-python -m filter.cli workspace <name>                     # Create with default template
-python -m filter.cli workspace <name> --template <type>   # Create with specific template
-python -m filter.cli workspace <name> --base-dir <dir>    # Custom base directory
+# Workspace creation
+python -m filter.cli workspace create --list-templates           # List available templates
+python -m filter.cli workspace create <name>                     # Create with default template
+python -m filter.cli workspace create <name> --template <type>   # Create with specific template
+python -m filter.cli workspace create <name> --base-dir <dir>    # Custom base directory
+
+# Workspace management
+python -m filter.cli workspace down <name>                       # Stop workspace containers
+python -m filter.cli workspace delete <name>                     # Delete stopped workspace
+python -m filter.cli workspace delete <name> --force             # Force delete running workspace
 
 # Workspace access helpers
 filter bash <workspace-name>                              # Interactive bash shell
@@ -287,6 +298,9 @@ python -m filter.cli template <template> [--var key=val] [--config file] [--env-
 # Help
 python -m filter.cli --help
 python -m filter.cli workspace --help
+python -m filter.cli workspace create --help
+python -m filter.cli workspace down --help
+python -m filter.cli workspace delete --help
 python -m filter.cli bash --help
 python -m filter.cli claude --help
 python -m filter.cli template --help

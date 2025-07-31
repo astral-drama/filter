@@ -74,22 +74,42 @@ The Filter CLI provides commands for template rendering and Docker workspace man
 
 ### Workspace Management
 
-Create isolated Docker environments for development with automatic port detection and multiple template options:
+Create and manage isolated Docker environments for development with automatic port detection and multiple template options:
+
+#### Creating Workspaces
 
 ```bash
 # List available templates
-python -m filter.cli workspace --list-templates
+python -m filter.cli workspace create --list-templates
 
 # Create workspace with default template (full-stack)
-python -m filter.cli workspace <name>
+python -m filter.cli workspace create <name>
 
 # Create workspace with specific template
-python -m filter.cli workspace <name> --template <template-name>
+python -m filter.cli workspace create <name> --template <template-name>
 
 # Examples
-python -m filter.cli workspace dev                    # Default: Postgres + Claude
-python -m filter.cli workspace frontend --template minimal  # Claude only
-python -m filter.cli workspace ml --template python         # Python + Jupyter + Postgres
+python -m filter.cli workspace create dev                    # Default: Postgres + Claude
+python -m filter.cli workspace create frontend --template minimal  # Claude only
+python -m filter.cli workspace create ml --template python         # Python + Jupyter + Postgres
+```
+
+#### Managing Workspaces
+
+```bash
+# Stop a running workspace
+python -m filter.cli workspace down <name>
+
+# Delete a stopped workspace
+python -m filter.cli workspace delete <name>
+
+# Force delete a running workspace (stops it first)
+python -m filter.cli workspace delete <name> --force
+
+# Examples
+python -m filter.cli workspace down dev              # Stop dev workspace
+python -m filter.cli workspace delete old-project    # Delete stopped workspace
+python -m filter.cli workspace delete test --force   # Stop and delete running workspace
 ```
 
 #### Available Templates

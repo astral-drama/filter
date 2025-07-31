@@ -13,12 +13,14 @@ from .workspace import (
     create_workspace, 
     list_templates, 
     render_template, 
-    exec_workspace_command
+    exec_workspace_command,
+    stop_workspace,
+    delete_workspace
 )
 
 
-def workspace_command(args):
-    """Handle workspace creation command."""
+def workspace_create_command(args):
+    """Handle workspace create subcommand."""
     logging.basicConfig(level=logging.INFO)
     
     if args.list_templates:
@@ -50,6 +52,46 @@ def workspace_command(args):
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def workspace_down_command(args):
+    """Handle workspace down subcommand."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        stop_workspace(args.name, Path(args.base_dir))
+        print(f"Workspace '{args.name}' stopped successfully")
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def workspace_delete_command(args):
+    """Handle workspace delete subcommand."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        delete_workspace(args.name, Path(args.base_dir), args.force)
+        print(f"Workspace '{args.name}' deleted successfully")
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def workspace_command(args):
+    """Handle workspace command routing."""
+    # For backwards compatibility - if no subcommand specified, default to create
+    if not hasattr(args, 'workspace_action') or args.workspace_action is None:
+        # Check if this looks like old-style usage
+        if hasattr(args, 'name') and args.name:
+            workspace_create_command(args)
+        else:
+            print("Error: Please specify a workspace action: create, down, or delete", file=sys.stderr)
+            print("Usage: workspace create <name>", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Subcommand specified, call the appropriate function
+        args.func(args)
 
 
 def claude_command(args):
@@ -139,25 +181,66 @@ def main():
     )
     subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-    # Workspace command
+    # Workspace command with subcommands
     workspace_parser = subparsers.add_parser(
-        'workspace', help='Create a new Docker workspace'
+        'workspace', help='Manage Docker workspaces'
     )
-    workspace_parser.add_argument(
-        'name', nargs='?', help='Workspace name (e.g., v3, dev, test)'
+    workspace_subparsers = workspace_parser.add_subparsers(
+        dest='workspace_action', help='Workspace actions'
     )
-    workspace_parser.add_argument(
+    
+    # Create subcommand (default action)
+    create_parser = workspace_subparsers.add_parser(
+        'create', help='Create a new Docker workspace'
+    )
+    create_parser.add_argument(
+        'name', help='Workspace name (e.g., v3, dev, test)'
+    )
+    create_parser.add_argument(
         '--template', '-t', default='default',
         help='Template to use (default: default)'
     )
-    workspace_parser.add_argument(
+    create_parser.add_argument(
         '--base-dir', default='workspaces',
         help='Base directory for workspaces (default: workspaces)'
     )
-    workspace_parser.add_argument(
+    create_parser.add_argument(
         '--list-templates', action='store_true',
         help='List available templates'
     )
+    create_parser.set_defaults(func=workspace_create_command)
+    
+    # Down subcommand
+    down_parser = workspace_subparsers.add_parser(
+        'down', help='Stop a running workspace'
+    )
+    down_parser.add_argument(
+        'name', help='Workspace name to stop'
+    )
+    down_parser.add_argument(
+        '--base-dir', default='workspaces',
+        help='Base directory for workspaces (default: workspaces)'
+    )
+    down_parser.set_defaults(func=workspace_down_command)
+    
+    # Delete subcommand
+    delete_parser = workspace_subparsers.add_parser(
+        'delete', help='Delete a workspace'
+    )
+    delete_parser.add_argument(
+        'name', help='Workspace name to delete'
+    )
+    delete_parser.add_argument(
+        '--base-dir', default='workspaces',
+        help='Base directory for workspaces (default: workspaces)'
+    )
+    delete_parser.add_argument(
+        '--force', '-f', action='store_true',
+        help='Force delete running workspace (stops it first)'
+    )
+    delete_parser.set_defaults(func=workspace_delete_command)
+    
+    # Set default routing function for workspace command
     workspace_parser.set_defaults(func=workspace_command)
 
     # Claude command
