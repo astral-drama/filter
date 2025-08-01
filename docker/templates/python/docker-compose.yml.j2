@@ -21,8 +21,10 @@ services:
       - "{{ claude_port }}:8000"
       - "{{ jupyter_port }}:8888"
     volumes:
-      - ../../home:/home/claude
       - ./workspace:/workspace
+      - ${HOME}/.gitconfig:/home/claude/.gitconfig:ro
+      - ${HOME}/.git-credentials:/home/claude/.git-credentials:ro
+      - ${HOME}/.claude:/home/claude/.claude
     environment:
       - DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
       - POSTGRES_HOST=postgres

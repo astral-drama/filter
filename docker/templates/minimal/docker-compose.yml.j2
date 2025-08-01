@@ -5,8 +5,10 @@ services:
     ports:
       - "{{ claude_port }}:8000"
     volumes:
-      - ../../home:/home/claude
       - ./workspace:/workspace
+      - ${HOME}/.gitconfig:/home/claude/.gitconfig:ro
+      - ${HOME}/.git-credentials:/home/claude/.git-credentials:ro
+      - ${HOME}/.claude:/home/claude/.claude
     environment:
       - CLAUDE_HOST_PORT={{ claude_port }}
       - CLAUDE_INTERNAL_PORT=8000

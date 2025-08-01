@@ -107,10 +107,12 @@ def workspace_command(args):
 def claude_command(args):
     """Handle claude session command."""
     try:
-        exit_code = exec_workspace_command(
-            args.workspace, 
-            ["claude", "--dangerously-skip-permissions"]
-        )
+        command = ["claude"]
+        if hasattr(args, 'resume') and args.resume:
+            command.append("-r")
+        command.append("--dangerously-skip-permissions")
+        
+        exit_code = exec_workspace_command(args.workspace, command)
         sys.exit(exit_code)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -259,6 +261,10 @@ def main():
     )
     claude_parser.add_argument(
         'workspace', help='Workspace name (e.g., v3, dev, test)'
+    )
+    claude_parser.add_argument(
+        '-r', '--resume', action='store_true',
+        help='Resume previous Claude session'
     )
     claude_parser.set_defaults(func=claude_command)
 

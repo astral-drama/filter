@@ -183,12 +183,7 @@ def create_workspace(
     workspace_subdir = workspace_dir / "workspace"
     workspace_subdir.mkdir(exist_ok=True)
 
-    # Ensure shared home directory exists
-    home_dir = base_dir.parent / "home"
-    if not home_dir.exists():
-        home_dir.mkdir(parents=True, exist_ok=True)
-        (home_dir / ".gitkeep").touch()
-        logger.info(f"Created shared home directory: {home_dir}")
+    # Note: No longer creating shared home directory - using direct mounts from host $HOME
     
     # Render template files
     template_files = ["Dockerfile.j2", "docker-compose.yml.j2", ".env.j2"]
