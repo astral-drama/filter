@@ -297,6 +297,10 @@ python -m filter.cli project list                                # List all proj
 python -m filter.cli project delete <name>                       # Delete project
 python -m filter.cli project delete <name> --force               # Force delete project
 
+# Story workspaces
+python -m filter.cli story <story-name>                          # Create workspace for story
+python -m filter.cli story <story-name> --template <template>    # Create with specific template
+
 # Workspace access helpers
 filter bash <workspace-name>                              # Interactive bash shell
 filter claude <workspace-name>                            # Start Claude session
@@ -416,6 +420,61 @@ The auto-generated prefix helps create consistent story and branch names:
 - **Kanban Isolation**: Each project has its own kanban board
 - **Flexible Structure**: Projects can exist with or without kanban
 - **Easy Management**: Simple CLI commands for project lifecycle
+
+## Story Workspaces
+
+The Filter system can create dedicated workspaces for individual stories, providing an isolated development environment with project context.
+
+### Creating Story Workspaces
+
+```bash
+# Create workspace for a story (searches all projects)
+python -m filter.cli story ibstr-1
+
+# Create with specific template
+python -m filter.cli story marke-2-refactor --template python
+```
+
+### Story Workspace Features
+
+When you create a story workspace:
+
+1. **Automatic Discovery**: Finds the story across all projects
+2. **Project Context**: Workspace is named after the story (e.g., `ibstr-1`)
+3. **Kanban Mounting**: Project's kanban directory is mounted at `/workspace/kanban`
+4. **Environment Variables**: Story context available in `.env`:
+   ```bash
+   PROJECT_NAME=ib-stream
+   STORY_NAME=ibstr-1
+   STORY_PATH=kanban/stories/ibstr-1.md
+   ```
+
+### Example Story Workspace
+
+```bash
+# Create story workspace
+filter story ibstr-1
+
+# Output shows project context
+# Story workspace 'ibstr-1' created at: /path/to/workspaces/ibstr-1
+# Project: ib-stream
+# Story file: stories/ibstr-1.md
+
+# Start the workspace
+cd /path/to/workspaces/ibstr-1
+docker compose up -d
+
+# Access your story file
+filter claude ibstr-1
+# Story file available at: /workspace/kanban/stories/ibstr-1.md
+```
+
+### Benefits
+
+- **Story-Focused Development**: Workspace named and configured for specific story
+- **Project Context**: Full access to project's kanban structure
+- **Environment Integration**: Story details available as environment variables
+- **Consistent Naming**: Workspace name matches story name and git branch conventions
 
 This workspace system provides isolated, reproducible development environments with automatic port management and full kanban integration.
 

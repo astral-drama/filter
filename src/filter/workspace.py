@@ -6,7 +6,7 @@ import socket
 import subprocess
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .config import get_workspaces_directory, get_templates_directory, get_kanban_directory
@@ -112,7 +112,8 @@ def list_templates(template_dir: Optional[Path] = None) -> List[Dict]:
 def create_workspace(
     workspace_name: str,
     base_dir: Optional[Path] = None,
-    template_name: str = "default"
+    template_name: str = "default",
+    story_context: Optional[Dict[str, Any]] = None
 ) -> Path:
     """Create a new Docker workspace using specified template.
 
@@ -120,6 +121,7 @@ def create_workspace(
         workspace_name: Name of the workspace (e.g., 'v3', 'dev', 'test')
         base_dir: Base directory for workspaces (defaults to configured workspaces directory)
         template_name: Template to use (defaults to 'default')
+        story_context: Optional story context with project_name, story_name, story_path, kanban_directory
 
     Returns:
         Path to created workspace directory
@@ -163,6 +165,10 @@ def create_workspace(
         "postgres_port": postgres_port,
         "claude_port": claude_port
     })
+    
+    # Add story context if provided
+    if story_context:
+        context.update(story_context)
 
     # Additional ports for specific templates
     if template_name == "python":
@@ -222,6 +228,20 @@ def create_workspace(
         logger.info(f"Copied kanban directory to {kanban_dest}")
     else:
         logger.warning(f"kanban directory not found at {kanban_src}, skipping copy")
+    
+    # Copy scripts directory and entrypoint script for Docker build context
+    scripts_src = Path(__file__).parent.parent.parent / "scripts"
+    entrypoint_src = template_dir / "entrypoint.sh"
+    
+    if scripts_src.exists():
+        scripts_dst = workspace_dir / "scripts"
+        shutil.copytree(scripts_src, scripts_dst, dirs_exist_ok=True)
+        logger.info(f"Copied scripts directory to {scripts_dst}")
+    
+    if entrypoint_src.exists():
+        entrypoint_dst = workspace_dir / "entrypoint.sh"
+        shutil.copy2(entrypoint_src, entrypoint_dst)
+        logger.info(f"Copied entrypoint script to {entrypoint_dst}")
     
     logger.info(f"Workspace {workspace_name} created successfully at {workspace_dir}")
     logger.info(f"Postgres will be available on port {postgres_port}")
@@ -396,3 +416,58 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
         logger.info(f"Workspace {workspace_name} deleted successfully from {workspace_dir}")
     except Exception as e:
         raise RuntimeError(f"Failed to delete workspace directory {workspace_dir}: {e}")
+
+
+def create_story_workspace(
+    story_name: str,
+    base_dir: Optional[Path] = None,
+    template_name: str = "default"
+) -> Path:
+    """Create a workspace for a specific story.
+    
+    Args:
+        story_name: Story name (e.g., 'ibstr-1', 'marke-2-refactor')
+        base_dir: Base directory for workspaces (defaults to configured workspaces directory)
+        template_name: Template to use (defaults to 'default')
+        
+    Returns:
+        Path to the created workspace directory
+        
+    Raises:
+        RuntimeError: If story not found or workspace creation fails
+    """
+    from .projects import find_story_in_projects
+    
+    # Find the story across all projects
+    story_info = find_story_in_projects(story_name)
+    if not story_info:
+        raise RuntimeError(f"Story '{story_name}' not found in any project")
+    
+    project_name = story_info['project_name']
+    kanban_dir = story_info['kanban_dir']
+    story_path = story_info['story_path']
+    
+    logger.info(f"Found story '{story_name}' in project '{project_name}'")
+    logger.info(f"Story file: {story_path}")
+    
+    # Create story context for the workspace
+    story_context = {
+        'project_name': project_name,
+        'story_name': story_name,
+        'story_path': story_path,
+        'kanban_directory': str(kanban_dir)
+    }
+    
+    # Use the existing create_workspace function with story context
+    workspace_dir = create_workspace(
+        workspace_name=story_name,
+        base_dir=base_dir,
+        template_name=template_name,
+        story_context=story_context
+    )
+    
+    logger.info(f"Project: {project_name}")
+    logger.info(f"Story file: {story_path}")
+    logger.info(f"Kanban directory will be mounted from: {kanban_dir}")
+    
+    return workspace_dir

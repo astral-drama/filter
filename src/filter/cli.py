@@ -15,7 +15,8 @@ from .workspace import (
     render_template, 
     exec_workspace_command,
     stop_workspace,
-    delete_workspace
+    delete_workspace,
+    create_story_workspace
 )
 from .projects import (
     create_project,
@@ -88,6 +89,28 @@ def workspace_delete_command(args):
             base_dir = Path(args.base_dir)
         delete_workspace(args.name, base_dir, args.force)
         print(f"Workspace '{args.name}' deleted successfully")
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def story_workspace_command(args):
+    """Handle story workspace creation."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+            
+        workspace_path = create_story_workspace(
+            args.story_name,
+            base_dir,
+            args.template
+        )
+        print(f"Story workspace '{args.story_name}' created at: {workspace_path}")
+        print(f"To start: cd {workspace_path} && docker compose up")
+        
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -406,6 +429,23 @@ def main():
     
     # Set default routing function for project command
     project_parser.set_defaults(func=project_command)
+
+    # Story workspace command
+    story_parser = subparsers.add_parser(
+        'story', help='Create workspace for a story'
+    )
+    story_parser.add_argument(
+        'story_name', help='Story name (e.g., ibstr-1, marke-2-refactor)'
+    )
+    story_parser.add_argument(
+        '--template', default='default',
+        help='Template to use (default: default)'
+    )
+    story_parser.add_argument(
+        '--base-dir',
+        help='Base directory for workspaces (default: from config)'
+    )
+    story_parser.set_defaults(func=story_workspace_command)
 
     # Claude command
     claude_parser = subparsers.add_parser(

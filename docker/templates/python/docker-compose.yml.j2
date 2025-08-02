@@ -15,6 +15,7 @@ services:
   claude:
     build: .
     container_name: claude_{{ workspace_name }}
+    hostname: claude-dev
     depends_on:
       - postgres
     ports:
@@ -22,9 +23,10 @@ services:
       - "{{ jupyter_port }}:8888"
     volumes:
       - ./workspace:/workspace
-      - ${HOME}/.gitconfig:/home/claude/.gitconfig
-      - ${HOME}/.git-credentials:/home/claude/.git-credentials
-      - ${HOME}/.claude:/home/claude/.claude
+{% if kanban_directory %}
+      - {{ kanban_directory }}:/workspace/kanban
+{% endif %}
+      - ../../home:/home/claude
     environment:
       - DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
       - POSTGRES_HOST=postgres
@@ -36,6 +38,15 @@ services:
       - CLAUDE_INTERNAL_PORT=8000
       - POSTGRES_HOST_PORT={{ postgres_port }}
       - JUPYTER_PORT={{ jupyter_port }}
+{% if project_name %}
+      - PROJECT_NAME={{ project_name }}
+{% endif %}
+{% if story_name %}
+      - STORY_NAME={{ story_name }}
+{% endif %}
+{% if story_path %}
+      - STORY_PATH={{ story_path }}
+{% endif %}
     restart: unless-stopped
     tty: true
     stdin_open: true

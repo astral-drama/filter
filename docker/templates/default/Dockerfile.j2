@@ -33,6 +33,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | g
 # Install claude code
 RUN npm install -g @anthropic-ai/claude-code
 
+# Set basic defaults
+RUN claude config set -g model claude-sonnet-4
+RUN claude config set -g verbose true
+
 # Install Python tools
 RUN pip3 install --break-system-packages uv ruff
 
@@ -45,11 +49,19 @@ RUN echo 'claude ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 # Create workspace directory owned by claude
 RUN mkdir -p /workspace && chown claude:claude /workspace
 
+# Copy scripts directory to /usr/local/bin
+COPY scripts/ /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.sh
+
+# Create entry script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Switch to claude user
 USER claude
 
 # Set working directory
 WORKDIR /workspace
 
-# Keep container running
-CMD ["tail", "-f", "/dev/null"]
+# Use entry script as default command
+CMD ["/usr/local/bin/entrypoint.sh"]

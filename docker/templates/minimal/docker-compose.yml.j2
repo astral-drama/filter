@@ -2,16 +2,27 @@ services:
   claude:
     build: .
     container_name: claude_{{ workspace_name }}
+    hostname: claude-dev
     ports:
       - "{{ claude_port }}:8000"
     volumes:
       - ./workspace:/workspace
-      - ${HOME}/.gitconfig:/home/claude/.gitconfig
-      - ${HOME}/.git-credentials:/home/claude/.git-credentials
-      - ${HOME}/.claude:/home/claude/.claude
+{% if kanban_directory %}
+      - {{ kanban_directory }}:/workspace/kanban
+{% endif %}
+      - ../../home:/home/claude
     environment:
       - CLAUDE_HOST_PORT={{ claude_port }}
       - CLAUDE_INTERNAL_PORT=8000
+{% if project_name %}
+      - PROJECT_NAME={{ project_name }}
+{% endif %}
+{% if story_name %}
+      - STORY_NAME={{ story_name }}
+{% endif %}
+{% if story_path %}
+      - STORY_PATH={{ story_path }}
+{% endif %}
     restart: unless-stopped
     tty: true
     stdin_open: true

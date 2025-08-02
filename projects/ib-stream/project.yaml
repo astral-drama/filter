@@ -1,0 +1,8 @@
+name: ib-stream
+prefix: ibstr
+description: ''
+git_url: https://github.com/lakowske/ib-stream.git
+maintainers:
+- lakowske@gmail.com
+created_at: null
+version: '1.0'
