@@ -287,9 +287,17 @@ python -m filter.cli workspace down <name>                       # Stop workspac
 python -m filter.cli workspace delete <name>                     # Delete stopped workspace
 python -m filter.cli workspace delete <name> --force             # Force delete running workspace
 
+# Project management
+python -m filter.cli project create <name>                       # Create new project with kanban
+python -m filter.cli project create <name> --no-kanban           # Create project without kanban
+python -m filter.cli project list                                # List all projects
+python -m filter.cli project delete <name>                       # Delete project
+python -m filter.cli project delete <name> --force               # Force delete project
+
 # Workspace access helpers
 filter bash <workspace-name>                              # Interactive bash shell
 filter claude <workspace-name>                            # Start Claude session
+filter claude <workspace-name> -r                         # Start Claude session with resume
 filter bash <workspace-name> -c "command"                 # Run command and exit
 
 # Template rendering (original functionality)
@@ -301,10 +309,75 @@ python -m filter.cli workspace --help
 python -m filter.cli workspace create --help
 python -m filter.cli workspace down --help
 python -m filter.cli workspace delete --help
+python -m filter.cli project --help
+python -m filter.cli project create --help
+python -m filter.cli project list --help
+python -m filter.cli project delete --help
 python -m filter.cli bash --help
 python -m filter.cli claude --help
 python -m filter.cli template --help
 ```
+
+## Project Management
+
+The Filter system includes project management capabilities for organizing stories and kanban boards by project. This helps keep stories from different projects separate and organized.
+
+### Project Structure
+
+Each project follows this structure:
+
+```
+projects/<project-name>/
+└── kanban/
+    ├── planning/
+    ├── in-progress/
+    ├── testing/
+    ├── pr/
+    ├── complete/
+    ├── prompts/
+    └── stories/
+```
+
+### Creating Projects
+
+```bash
+# Create a new project with kanban structure
+python -m filter.cli project create ib-stream
+
+# Create a project without kanban structure
+python -m filter.cli project create marketbridge --no-kanban
+
+# Create project in custom directory
+python -m filter.cli project create analytics --base-dir /custom/projects
+```
+
+### Managing Projects
+
+```bash
+# List all projects
+python -m filter.cli project list
+
+# Delete a project
+python -m filter.cli project delete old-project
+
+# Force delete without confirmation
+python -m filter.cli project delete old-project --force
+```
+
+### Example Workflow
+
+1. **Create project**: `python -m filter.cli project create ib-stream`
+2. **Organize stories**: Move stories into `/home/seth/Software/dev/filter/projects/ib-stream/kanban/stories/`
+3. **Plan work**: Move stories from `stories/` to `planning/` 
+4. **Track progress**: Move through `in-progress/` → `testing/` → `pr/` → `complete/`
+5. **Workspace integration**: Use project-specific kanban in workspaces
+
+### Benefits
+
+- **Story Organization**: Keep stories separated by project
+- **Kanban Isolation**: Each project has its own kanban board
+- **Flexible Structure**: Projects can exist with or without kanban
+- **Easy Management**: Simple CLI commands for project lifecycle
 
 This workspace system provides isolated, reproducible development environments with automatic port management and full kanban integration.
 

@@ -100,6 +100,22 @@ def get_templates_directory(config: Optional[Dict[str, Any]] = None) -> Path:
     return (project_root / templates_dir).resolve()
 
 
+def get_projects_directory(config: Optional[Dict[str, Any]] = None) -> Path:
+    """Get the projects directory from configuration.
+    
+    Args:
+        config: Configuration dictionary (loads from file if None)
+        
+    Returns:
+        Path to projects directory
+    """
+    if config is None:
+        config = load_config()
+    
+    projects_dir = config.get('projects_directory', './projects')
+    return Path(projects_dir).expanduser().resolve()
+
+
 def get_kanban_directory(config: Optional[Dict[str, Any]] = None) -> Path:
     """Get the kanban directory from configuration.
     

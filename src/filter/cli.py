@@ -17,6 +17,11 @@ from .workspace import (
     stop_workspace,
     delete_workspace
 )
+from .projects import (
+    create_project,
+    list_projects,
+    delete_project
+)
 from .config import get_workspaces_directory
 
 
@@ -99,6 +104,77 @@ def workspace_command(args):
             print("Error: Please specify a workspace action: create, down, or delete", file=sys.stderr)
             print("Usage: workspace create <name>", file=sys.stderr)
             sys.exit(1)
+    else:
+        # Subcommand specified, call the appropriate function
+        args.func(args)
+
+
+def project_create_command(args):
+    """Handle project create subcommand."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+        
+        project_path = create_project(
+            args.name,
+            base_dir,
+            copy_kanban=not args.no_kanban
+        )
+        print(f"Project '{args.name}' created at: {project_path}")
+        if not args.no_kanban:
+            print(f"Kanban structure available at: {project_path / 'kanban'}")
+        
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def project_list_command(args):
+    """Handle project list subcommand."""
+    try:
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+            
+        projects = list_projects(base_dir)
+        if projects:
+            print("Available projects:")
+            for project in projects:
+                print(f"  {project}")
+        else:
+            print("No projects found.")
+            
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def project_delete_command(args):
+    """Handle project delete subcommand."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        base_dir = None
+        if hasattr(args, 'base_dir') and args.base_dir:
+            base_dir = Path(args.base_dir)
+            
+        delete_project(args.name, base_dir, args.force)
+        print(f"Project '{args.name}' deleted successfully")
+        
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def project_command(args):
+    """Handle project command routing."""
+    if not hasattr(args, 'project_action') or args.project_action is None:
+        print("Error: Please specify a project action: create, list, or delete", file=sys.stderr)
+        print("Usage: project create <name>", file=sys.stderr)
+        sys.exit(1)
     else:
         # Subcommand specified, call the appropriate function
         args.func(args)
@@ -254,6 +330,57 @@ def main():
     
     # Set default routing function for workspace command
     workspace_parser.set_defaults(func=workspace_command)
+
+    # Project command with subcommands
+    project_parser = subparsers.add_parser('project', help='Manage projects')
+    project_subparsers = project_parser.add_subparsers(dest='project_action', help='Project actions')
+    
+    # Create subcommand
+    project_create_parser = project_subparsers.add_parser(
+        'create', help='Create a new project'
+    )
+    project_create_parser.add_argument(
+        'name', help='Project name (e.g., ib-stream, marketbridge)'
+    )
+    project_create_parser.add_argument(
+        '--base-dir',
+        help='Base directory for projects (default: from config)'
+    )
+    project_create_parser.add_argument(
+        '--no-kanban', action='store_true',
+        help='Do not copy kanban structure to project'
+    )
+    project_create_parser.set_defaults(func=project_create_command)
+    
+    # List subcommand
+    project_list_parser = project_subparsers.add_parser(
+        'list', help='List existing projects'
+    )
+    project_list_parser.add_argument(
+        '--base-dir',
+        help='Base directory for projects (default: from config)'
+    )
+    project_list_parser.set_defaults(func=project_list_command)
+    
+    # Delete subcommand
+    project_delete_parser = project_subparsers.add_parser(
+        'delete', help='Delete a project'
+    )
+    project_delete_parser.add_argument(
+        'name', help='Project name to delete'
+    )
+    project_delete_parser.add_argument(
+        '--base-dir',
+        help='Base directory for projects (default: from config)'
+    )
+    project_delete_parser.add_argument(
+        '--force', '-f', action='store_true',
+        help='Force delete without confirmation'
+    )
+    project_delete_parser.set_defaults(func=project_delete_command)
+    
+    # Set default routing function for project command
+    project_parser.set_defaults(func=project_command)
 
     # Claude command
     claude_parser = subparsers.add_parser(
