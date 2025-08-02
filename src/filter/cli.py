@@ -21,7 +21,9 @@ from .workspace import (
 from .projects import (
     create_project,
     list_projects,
-    delete_project
+    delete_project,
+    find_story_in_projects,
+    get_project_path
 )
 from .config import get_workspaces_directory
 
@@ -94,6 +96,128 @@ def workspace_delete_command(args):
         sys.exit(1)
 
 
+def story_create_command(args):
+    """Handle story creation using template."""
+    import re
+    import yaml
+    from jinja2 import Environment, FileSystemLoader
+    from .config import get_projects_directory
+    
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        # Find project for this story prefix or ask user to specify
+        if hasattr(args, 'project') and args.project:
+            project_name = args.project
+            projects_dir = get_projects_directory()
+            project_dir = projects_dir / project_name
+            if not project_dir.exists():
+                raise RuntimeError(f"Project '{project_name}' not found")
+        else:
+            # TODO: Could auto-detect from story_id prefix in the future
+            print("Error: --project is required for story creation", file=sys.stderr)
+            sys.exit(1)
+        
+        # Read project config
+        config_file = project_dir / "project.yaml"
+        if not config_file.exists():
+            raise RuntimeError(f"Project config not found: {config_file}")
+            
+        with open(config_file) as f:
+            project_config = yaml.safe_load(f)
+        
+        # Generate story ID if not provided
+        if hasattr(args, 'story_id') and args.story_id:
+            story_id = args.story_id
+        else:
+            # Auto-generate next story ID
+            story_id = generate_next_story_id(project_dir, project_config.get('prefix', project_name[:5]))
+        
+        # Get required information
+        story_description = args.description
+        repository = project_config.get('git_url', '')
+        branch_from = getattr(args, 'branch_from', 'main')
+        merge_to = getattr(args, 'merge_to', 'main')
+        feature_branch = f"{story_id}-{args.feature_suffix}" if hasattr(args, 'feature_suffix') and args.feature_suffix else story_id
+        
+        # Load and render template
+        template_dir = Path(__file__).parent.parent.parent / "story" / "templates"
+        env = Environment(loader=FileSystemLoader(template_dir))
+        template = env.get_template("default.md.j2")
+        
+        rendered = template.render(
+            story_id=story_id,
+            story_description=story_description,
+            repository=repository,
+            branch_from=branch_from,
+            merge_to=merge_to,
+            feature_branch=feature_branch
+        )
+        
+        # Write story file
+        story_file = project_dir / "kanban" / "stories" / f"{story_id}.md"
+        story_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(story_file, 'w') as f:
+            f.write(rendered)
+        
+        print(f"Story '{story_id}' created at: {story_file}")
+        print(f"To create workspace: filter story workspace {story_id}")
+        
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def generate_next_story_id(project_dir: Path, prefix: str) -> str:
+    """Generate the next story ID by looking at existing stories."""
+    import re
+    
+    stories_dir = project_dir / "kanban" / "stories"
+    if not stories_dir.exists():
+        return f"{prefix}-1"
+    
+    max_id = 0
+    pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)\.md$")
+    
+    for story_file in stories_dir.glob("*.md"):
+        match = pattern.match(story_file.name)
+        if match:
+            story_num = int(match.group(1))
+            max_id = max(max_id, story_num)
+    
+    return f"{prefix}-{max_id + 1}"
+
+
+def story_delete_command(args):
+    """Handle story deletion."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        # Find the story
+        story_info = find_story_in_projects(args.story_id)
+        if not story_info:
+            raise RuntimeError(f"Story '{args.story_id}' not found in any project")
+        
+        story_file = story_info['story_file']
+        project_name = story_info['project_name']
+        
+        # Confirm deletion unless forced
+        if not args.force:
+            response = input(f"Delete story '{args.story_id}' from project '{project_name}'? (y/N): ")
+            if response.lower() != 'y':
+                print("Deletion cancelled")
+                return
+        
+        # Delete the story file
+        story_file.unlink()
+        print(f"Story '{args.story_id}' deleted from project '{project_name}'")
+        
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def story_workspace_command(args):
     """Handle story workspace creation."""
     logging.basicConfig(level=logging.INFO)
@@ -114,6 +238,17 @@ def story_workspace_command(args):
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def story_command(args):
+    """Handle story command routing."""
+    # For backwards compatibility - if no subcommand specified, show help
+    if not hasattr(args, 'story_func'):
+        print("Error: story command requires a subcommand (create, delete, workspace)", file=sys.stderr)
+        print("Use 'filter story --help' for more information")
+        sys.exit(1)
+    
+    args.story_func(args)
 
 
 def workspace_command(args):
@@ -430,22 +565,75 @@ def main():
     # Set default routing function for project command
     project_parser.set_defaults(func=project_command)
 
-    # Story workspace command
+    # Story management command
     story_parser = subparsers.add_parser(
-        'story', help='Create workspace for a story'
+        'story', help='Manage stories (create, delete, workspace)'
     )
-    story_parser.add_argument(
+    story_subparsers = story_parser.add_subparsers(
+        dest='story_command', help='Story management commands'
+    )
+    
+    # Story create subcommand
+    story_create_parser = story_subparsers.add_parser(
+        'create', help='Create a new story from template'
+    )
+    story_create_parser.add_argument(
+        'description', help='Brief description of the story'
+    )
+    story_create_parser.add_argument(
+        '--project', required=True,
+        help='Project name to create story in'
+    )
+    story_create_parser.add_argument(
+        '--story-id', 
+        help='Story ID (auto-generated if not provided)'
+    )
+    story_create_parser.add_argument(
+        '--branch-from', default='main',
+        help='Branch to branch from (default: main)'
+    )
+    story_create_parser.add_argument(
+        '--merge-to', default='main',
+        help='Branch to merge to (default: main)'
+    )
+    story_create_parser.add_argument(
+        '--feature-suffix',
+        help='Feature branch suffix (default: story-id only)'
+    )
+    story_create_parser.set_defaults(story_func=story_create_command)
+    
+    # Story delete subcommand
+    story_delete_parser = story_subparsers.add_parser(
+        'delete', help='Delete an existing story'
+    )
+    story_delete_parser.add_argument(
+        'story_id', help='Story ID to delete (e.g., ibstr-1)'
+    )
+    story_delete_parser.add_argument(
+        '--force', '-f', action='store_true',
+        help='Force delete without confirmation'
+    )
+    story_delete_parser.set_defaults(story_func=story_delete_command)
+    
+    # Story workspace subcommand
+    story_workspace_parser = story_subparsers.add_parser(
+        'workspace', help='Create workspace for an existing story'
+    )
+    story_workspace_parser.add_argument(
         'story_name', help='Story name (e.g., ibstr-1, marke-2-refactor)'
     )
-    story_parser.add_argument(
+    story_workspace_parser.add_argument(
         '--template', default='default',
         help='Template to use (default: default)'
     )
-    story_parser.add_argument(
+    story_workspace_parser.add_argument(
         '--base-dir',
         help='Base directory for workspaces (default: from config)'
     )
-    story_parser.set_defaults(func=story_workspace_command)
+    story_workspace_parser.set_defaults(story_func=story_workspace_command)
+    
+    # Set default routing function for story command
+    story_parser.set_defaults(func=story_command)
 
     # Claude command
     claude_parser = subparsers.add_parser(
