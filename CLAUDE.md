@@ -289,6 +289,9 @@ python -m filter.cli workspace delete <name> --force             # Force delete 
 
 # Project management
 python -m filter.cli project create <name>                       # Create new project with kanban
+python -m filter.cli project create <name> --description "desc"  # Create with description
+python -m filter.cli project create <name> --git-url <url>       # Create with git URL
+python -m filter.cli project create <name> --maintainer <email>  # Create with maintainer
 python -m filter.cli project create <name> --no-kanban           # Create project without kanban
 python -m filter.cli project list                                # List all projects
 python -m filter.cli project delete <name>                       # Delete project
@@ -328,6 +331,7 @@ Each project follows this structure:
 
 ```
 projects/<project-name>/
+├── project.yaml           # Project configuration with prefix and metadata
 └── kanban/
     ├── planning/
     ├── in-progress/
@@ -344,8 +348,15 @@ projects/<project-name>/
 # Create a new project with kanban structure
 python -m filter.cli project create ib-stream
 
+# Create a project with metadata
+python -m filter.cli project create marketbridge \
+  --description "Multi-market trading bridge system" \
+  --git-url "https://github.com/user/marketbridge.git" \
+  --maintainer "developer@example.com" \
+  --maintainer "lead@example.com"
+
 # Create a project without kanban structure
-python -m filter.cli project create marketbridge --no-kanban
+python -m filter.cli project create simple-tool --no-kanban
 
 # Create project in custom directory
 python -m filter.cli project create analytics --base-dir /custom/projects
@@ -364,17 +375,44 @@ python -m filter.cli project delete old-project
 python -m filter.cli project delete old-project --force
 ```
 
+### Project Configuration
+
+Each project includes a `project.yaml` configuration file with:
+
+```yaml
+name: marketbridge
+prefix: marke                                    # Auto-generated 5-char prefix
+description: Multi-market trading bridge system
+git_url: https://github.com/user/marketbridge.git
+maintainers:
+- developer@example.com
+- lead@example.com
+created_at: null
+version: '1.0'
+```
+
+### Story Naming with Prefixes
+
+The auto-generated prefix helps create consistent story and branch names:
+
+- **Story examples**: `marke-1`, `marke-2-refactor`, `marke-15-auth-fix`  
+- **Branch examples**: `marke-1`, `marke-2-refactor`, `marke-15-auth-fix`
+- **Prefix generation**: `ib-stream` → `ibstr`, `marketbridge` → `marke`
+
 ### Example Workflow
 
 1. **Create project**: `python -m filter.cli project create ib-stream`
-2. **Organize stories**: Move stories into `/home/seth/Software/dev/filter/projects/ib-stream/kanban/stories/`
-3. **Plan work**: Move stories from `stories/` to `planning/` 
-4. **Track progress**: Move through `in-progress/` → `testing/` → `pr/` → `complete/`
-5. **Workspace integration**: Use project-specific kanban in workspaces
+2. **Note the prefix**: Project creates with prefix `ibstr` for story naming
+3. **Organize stories**: Create stories like `ibstr-1.md`, `ibstr-2-optimization.md`
+4. **Plan work**: Move stories from `stories/` to `planning/` 
+5. **Track progress**: Move through `in-progress/` → `testing/` → `pr/` → `complete/`
+6. **Branch naming**: Use same prefix for git branches: `ibstr-1`, `ibstr-2-optimization`
 
 ### Benefits
 
 - **Story Organization**: Keep stories separated by project
+- **Consistent Naming**: Auto-generated prefixes for stories and branches
+- **Project Metadata**: Track descriptions, git URLs, and maintainers
 - **Kanban Isolation**: Each project has its own kanban board
 - **Flexible Structure**: Projects can exist with or without kanban
 - **Easy Management**: Simple CLI commands for project lifecycle

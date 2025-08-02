@@ -1,0 +1,9 @@
+name: marketbridge
+prefix: marke
+description: Multi-market trading bridge system
+git_url: https://github.com/user/marketbridge.git
+maintainers:
+- developer@example.com
+- lead@example.com
+created_at: null
+version: '1.0'

@@ -121,11 +121,24 @@ def project_create_command(args):
         project_path = create_project(
             args.name,
             base_dir,
-            copy_kanban=not args.no_kanban
+            copy_kanban=not args.no_kanban,
+            description=getattr(args, 'description', '') or '',
+            git_url=getattr(args, 'git_url', '') or '',
+            maintainers=getattr(args, 'maintainers', None) or []
         )
         print(f"Project '{args.name}' created at: {project_path}")
+        
+        # Load and display the generated config
+        from .projects import load_project_config, generate_project_prefix
+        config = load_project_config(project_path)
+        if config:
+            prefix = config.get('prefix', generate_project_prefix(args.name))
+            print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-refactor)")
+        
         if not args.no_kanban:
             print(f"Kanban structure available at: {project_path / 'kanban'}")
+        
+        print(f"Project config: {project_path / 'project.yaml'}")
         
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -349,6 +362,18 @@ def main():
     project_create_parser.add_argument(
         '--no-kanban', action='store_true',
         help='Do not copy kanban structure to project'
+    )
+    project_create_parser.add_argument(
+        '--description', 
+        help='Project description'
+    )
+    project_create_parser.add_argument(
+        '--git-url',
+        help='Git repository URL'
+    )
+    project_create_parser.add_argument(
+        '--maintainer', action='append', dest='maintainers',
+        help='Project maintainer (can be used multiple times)'
     )
     project_create_parser.set_defaults(func=project_create_command)
     
