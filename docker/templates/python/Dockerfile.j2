@@ -30,7 +30,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | g
 RUN npm install -g @anthropic-ai/claude-code
 
 # Set basic defaults
-RUN claude config set -g model claude-sonnet-4
 RUN claude config set -g verbose true
 
 # Install Python development tools

@@ -418,6 +418,52 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
         raise RuntimeError(f"Failed to delete workspace directory {workspace_dir}: {e}")
 
 
+def clone_git_repository(workspace_dir: Path, git_url: str, branch_name: str) -> None:
+    """Clone a git repository into the workspace directory.
+    
+    Args:
+        workspace_dir: Path to the workspace directory
+        git_url: Git repository URL to clone
+        branch_name: Branch name to create and checkout (typically the story name)
+        
+    Raises:
+        RuntimeError: If git operations fail
+    """
+    repo_dir = workspace_dir / "workspace" / "repo"
+    
+    try:
+        # Clone the repository
+        logger.info(f"Cloning repository {git_url} to {repo_dir}")
+        subprocess.run(
+            ["git", "clone", git_url, str(repo_dir)],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Create and checkout feature branch
+        logger.info(f"Creating and checking out branch {branch_name}")
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        
+        logger.info(f"Repository cloned successfully to {repo_dir}")
+        logger.info(f"Checked out feature branch: {branch_name}")
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Git operation failed: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    except Exception as e:
+        error_msg = f"Failed to clone repository: {e}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+
 def create_story_workspace(
     story_name: str,
     base_dir: Optional[Path] = None,
@@ -436,7 +482,7 @@ def create_story_workspace(
     Raises:
         RuntimeError: If story not found or workspace creation fails
     """
-    from .projects import find_story_in_projects
+    from .projects import find_story_in_projects, load_project_config
     
     # Find the story across all projects
     story_info = find_story_in_projects(story_name)
@@ -444,11 +490,16 @@ def create_story_workspace(
         raise RuntimeError(f"Story '{story_name}' not found in any project")
     
     project_name = story_info['project_name']
+    project_dir = story_info['project_dir']
     kanban_dir = story_info['kanban_dir']
     story_path = story_info['story_path']
     
     logger.info(f"Found story '{story_name}' in project '{project_name}'")
     logger.info(f"Story file: {story_path}")
+    
+    # Load project configuration to get git URL
+    project_config = load_project_config(project_dir)
+    git_url = project_config.get('git_url', '') if project_config else ''
     
     # Create story context for the workspace
     story_context = {
@@ -465,6 +516,12 @@ def create_story_workspace(
         template_name=template_name,
         story_context=story_context
     )
+    
+    # Clone git repository if URL is available
+    if git_url:
+        clone_git_repository(workspace_dir, git_url, story_name)
+    else:
+        logger.warning(f"No git URL found in project config for {project_name}")
     
     logger.info(f"Project: {project_name}")
     logger.info(f"Story file: {story_path}")
