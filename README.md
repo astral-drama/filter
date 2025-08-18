@@ -2,6 +2,8 @@
 
 A file-system based Kanban board that uses directories, Markdown files, and symbolic links to track development stories, with integrated LLM automation for task completion in sandboxed Docker containers.
 
+> **Note**: Repository contributor statistics may take time to update after git history rewrites.
+
 ## Overview
 
 This project creates a unique Kanban workflow where:
