@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .config import get_workspaces_directory, get_templates_directory, get_kanban_directory
+from .config import get_workspaces_directory, get_templates_directory, get_kanban_directory, find_filter_directory
 
 logger = logging.getLogger(__name__)
 
@@ -220,14 +220,23 @@ def create_workspace(
         else:
             logger.warning(f"Template file not found: {template_path}")
     
-    # Copy kanban directory if it exists
-    kanban_src = get_kanban_directory()
-    if kanban_src.exists():
+    # Handle kanban directory - prefer .filter/kanban if available
+    filter_dir = find_filter_directory()
+    if filter_dir and (filter_dir / "kanban").exists():
+        # For .filter repositories, create symlink to mount kanban directly
+        kanban_src = filter_dir / "kanban"
         kanban_dest = workspace_subdir / "kanban"
-        shutil.copytree(kanban_src, kanban_dest)
-        logger.info(f"Copied kanban directory to {kanban_dest}")
+        kanban_dest.symlink_to(kanban_src.resolve())
+        logger.info(f"Linked kanban directory from {kanban_src} to {kanban_dest}")
     else:
-        logger.warning(f"kanban directory not found at {kanban_src}, skipping copy")
+        # Legacy support: copy kanban directory
+        kanban_src = get_kanban_directory()
+        if kanban_src.exists():
+            kanban_dest = workspace_subdir / "kanban"
+            shutil.copytree(kanban_src, kanban_dest)
+            logger.info(f"Copied kanban directory to {kanban_dest}")
+        else:
+            logger.warning(f"kanban directory not found at {kanban_src}, skipping copy")
     
     # Copy scripts directory and entrypoint script for Docker build context
     scripts_src = Path(__file__).parent.parent.parent / "scripts"

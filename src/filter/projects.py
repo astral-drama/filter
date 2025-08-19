@@ -323,6 +323,10 @@ def find_story_in_projects(
 ) -> Optional[Dict[str, Any]]:
     """Find a story across all projects by name.
     
+    Searches in this order:
+    1. Current repository .filter/kanban (if available)
+    2. Projects directory (legacy support)
+    
     Args:
         story_name: Story name (e.g., 'ibstr-1', 'marke-2-refactor')
         base_dir: Projects directory (defaults to configured projects directory)
@@ -337,6 +341,19 @@ def find_story_in_projects(
             'kanban_dir': Path('/path/to/kanban')
         }
     """
+    from .config import find_filter_directory, is_filter_repository
+    
+    # First check current repository for .filter/kanban
+    current_dir = Path.cwd()
+    if is_filter_repository(current_dir):
+        filter_dir = find_filter_directory(current_dir)
+        if filter_dir:
+            kanban_dir = filter_dir / "kanban"
+            story_info = _search_kanban_for_story(story_name, kanban_dir, current_dir.name, current_dir)
+            if story_info:
+                return story_info
+    
+    # Then search through configured projects directory
     if base_dir is None:
         base_dir = get_projects_directory()
     
@@ -352,27 +369,46 @@ def find_story_in_projects(
         if not kanban_dir.exists():
             continue
         
-        # Check all kanban subdirectories for the story
-        for kanban_subdir in kanban_dir.iterdir():
-            if not kanban_subdir.is_dir():
-                continue
-                
-            # Look for story files with various extensions
-            story_files = [
-                kanban_subdir / f"{story_name}.md",
-                kanban_subdir / f"{story_name}.txt",
-                kanban_subdir / story_name,
-            ]
+        story_info = _search_kanban_for_story(story_name, kanban_dir, project_dir.name, project_dir)
+        if story_info:
+            return story_info
+    
+    return None
+
+
+def _search_kanban_for_story(story_name: str, kanban_dir: Path, project_name: str, project_dir: Path) -> Optional[Dict[str, Any]]:
+    """Search a kanban directory for a specific story.
+    
+    Args:
+        story_name: Story name to search for
+        kanban_dir: Kanban directory to search in
+        project_name: Name of the project
+        project_dir: Project directory path
+        
+    Returns:
+        Story info dictionary or None if not found
+    """
+    # Check all kanban subdirectories for the story
+    for kanban_subdir in kanban_dir.iterdir():
+        if not kanban_subdir.is_dir():
+            continue
             
-            for story_file in story_files:
-                if story_file.exists():
-                    return {
-                        'project_name': project_dir.name,
-                        'project_dir': project_dir,
-                        'story_file': story_file,
-                        'story_path': str(story_file.relative_to(kanban_dir)),
-                        'kanban_dir': kanban_dir
-                    }
+        # Look for story files with various extensions
+        story_files = [
+            kanban_subdir / f"{story_name}.md",
+            kanban_subdir / f"{story_name}.txt",
+            kanban_subdir / story_name,
+        ]
+        
+        for story_file in story_files:
+            if story_file.exists():
+                return {
+                    'project_name': project_name,
+                    'project_dir': project_dir,
+                    'story_file': story_file,
+                    'story_path': str(story_file.relative_to(kanban_dir)),
+                    'kanban_dir': kanban_dir
+                }
     
     return None
 

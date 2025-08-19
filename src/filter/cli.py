@@ -270,6 +270,55 @@ def workspace_command(args):
         args.func(args)
 
 
+def init_command(args):
+    """Handle filter init command."""
+    logging.basicConfig(level=logging.INFO)
+    
+    try:
+        from .config import create_filter_directory, is_filter_repository
+        
+        repo_path = Path.cwd()
+        
+        # Check if already initialized
+        if is_filter_repository(repo_path) and not args.force:
+            print(f"Error: Filter already initialized in {repo_path}")
+            print("Use --force to reinitialize")
+            sys.exit(1)
+        
+        # Create .filter directory structure
+        filter_dir = create_filter_directory(
+            repo_path,
+            project_name=args.project_name,
+            prefix=args.prefix
+        )
+        
+        print(f"Filter initialized in {repo_path}")
+        print(f"Created .filter directory at: {filter_dir}")
+        print(f"Kanban board available at: {filter_dir / 'kanban'}")
+        print(f"Project metadata: {filter_dir / 'metadata.yaml'}")
+        print(f"Repository config: {filter_dir / 'config.yaml'}")
+        
+        # Read the generated metadata to show prefix
+        metadata_file = filter_dir / "metadata.yaml"
+        if metadata_file.exists():
+            import yaml
+            with open(metadata_file, encoding='utf-8') as f:
+                metadata = yaml.safe_load(f)
+                prefix = metadata.get('prefix', 'unknown')
+                project_name = metadata.get('name', 'unknown')
+                print(f"Project: {project_name}")
+                print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-feature)")
+        
+        print("\nNext steps:")
+        print("1. Add stories to .filter/kanban/stories/")
+        print("2. Move stories to appropriate stages (planning, in-progress, etc.)")
+        print("3. Create workspaces with: filter story workspace <story-name>")
+        
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def safe_getattr(obj, attr: str, default: str = '') -> str:
     """Safely get attribute value with fallback to default.
     
@@ -612,6 +661,24 @@ def main():
     
     # Set default routing function for workspace command
     workspace_parser.set_defaults(func=workspace_command)
+
+    # Init command
+    init_parser = subparsers.add_parser(
+        'init', help='Initialize Filter in a repository'
+    )
+    init_parser.add_argument(
+        '--project-name', 
+        help='Project name (defaults to repository directory name)'
+    )
+    init_parser.add_argument(
+        '--prefix',
+        help='Story prefix (auto-generated if not provided)'
+    )
+    init_parser.add_argument(
+        '--force', '-f', action='store_true',
+        help='Force initialization even if .filter directory exists'
+    )
+    init_parser.set_defaults(func=init_command)
 
     # Project command with subcommands
     project_parser = subparsers.add_parser('project', help='Manage projects')
