@@ -110,6 +110,18 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 file_config = yaml.safe_load(f) or {}
+                
+                # Resolve relative paths from config file's directory
+                config_dir = config_path.parent
+                path_keys = ['workspaces_directory', 'projects_directory', 'kanban_directory', 'templates_directory']
+                
+                for key in path_keys:
+                    if key in file_config:
+                        path_value = file_config[key]
+                        if isinstance(path_value, str) and not Path(path_value).is_absolute():
+                            # Resolve relative paths from config file's directory
+                            file_config[key] = str((config_dir / path_value).resolve())
+                
                 # Merge file config over defaults
                 config.update(file_config)
         except yaml.YAMLError as e:

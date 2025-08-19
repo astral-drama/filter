@@ -1,5 +1,5 @@
-workspaces_directory: /Users/seth/Software/dev/filter/workspaces
-projects_directory: /Users/seth/Software/dev/filter/projects
+workspaces_directory: ./workspaces
+projects_directory: ./projects
 kanban_directory: ./kanban
 git_author_name: Filter Bot
 git_author_email: bot@filter-kanban.dev
