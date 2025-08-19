@@ -510,6 +510,11 @@ def clone_command(args):
     try:
         from .config import create_filter_directory, is_filter_repository
 
+        # Validate conflicting fork options
+        if getattr(args, 'no_fork', False) and (getattr(args, 'fork', False) or getattr(args, 'yes', False)):
+            print("Error: Cannot use --no-fork with --fork or -y flags", file=sys.stderr)
+            sys.exit(1)
+
         # Audit log the command
         audit_log("clone command initiated",
                  git_url=args.git_url if args.git_url else "missing",
@@ -575,8 +580,15 @@ def clone_command(args):
 
                 # Check if this is a GitHub repository and gh CLI is available
                 if "github.com" in args.git_url and check_command_available('gh'):
-                    response = input("Would you like to create a fork? (y/N): ")
-                    if response.lower() == 'y':
+                    # Auto-answer yes if --fork or -y flag is provided
+                    if getattr(args, 'fork', False) or getattr(args, 'yes', False):
+                        print("Auto-creating fork due to --fork or -y flag...")
+                        should_fork = True
+                    else:
+                        response = input("Would you like to create a fork? (y/N): ")
+                        should_fork = response.lower() == 'y'
+                    
+                    if should_fork:
                         try:
                             print("Creating fork...")
                             fork_url = create_github_fork(args.git_url)
@@ -1063,6 +1075,14 @@ def main():
     clone_parser.add_argument(
         '--no-fork', action='store_true',
         help='Skip fork creation even if push access is denied'
+    )
+    clone_parser.add_argument(
+        '--fork', action='store_true',
+        help='Automatically create fork if push access is denied (non-interactive)'
+    )
+    clone_parser.add_argument(
+        '-y', '--yes', action='store_true',
+        help='Answer yes to all questions (equivalent to --fork for clone)'
     )
     clone_parser.set_defaults(func=clone_command)
 
