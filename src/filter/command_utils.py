@@ -68,22 +68,26 @@ def run_command(
     # Determine working directory
     work_dir = str(Path(cwd).resolve()) if cwd else os.getcwd()
     
+    # Determine log command string for logging
+    if sensitive:
+        log_command = "[SENSITIVE COMMAND REDACTED]"
+    else:
+        log_command = command_str
+    
     # Log command execution (mask sensitive commands)
     if audit:
         if sensitive:
-            log_command = "[SENSITIVE COMMAND REDACTED]"
             audit_log("Sensitive command executed", 
                      cwd=work_dir, 
                      user=os.getenv('USER', 'unknown'))
         else:
-            log_command = command_str
             command_log(log_command, cwd=work_dir)
             audit_log("Command executed", 
                      command=log_command, 
                      cwd=work_dir, 
                      user=os.getenv('USER', 'unknown'))
     
-    logger.debug(f"Executing command: {log_command if not sensitive else '[REDACTED]'}")
+    logger.debug(f"Executing command: {log_command}")
     logger.debug(f"Working directory: {work_dir}")
     
     try:
@@ -108,16 +112,16 @@ def run_command(
         
         # Log result
         if cmd_result.success:
-            logger.debug(f"Command succeeded: {log_command if not sensitive else '[REDACTED]'}")
+            logger.debug(f"Command succeeded: {log_command}")
             if audit and not sensitive:
                 audit_log("Command completed successfully", 
                          command=log_command, 
                          returncode=cmd_result.returncode)
         else:
-            logger.warning(f"Command failed with code {cmd_result.returncode}: {log_command if not sensitive else '[REDACTED]'}")
+            logger.warning(f"Command failed with code {cmd_result.returncode}: {log_command}")
             if audit:
                 audit_log("Command failed", 
-                         command=log_command if not sensitive else '[REDACTED]', 
+                         command=log_command, 
                          returncode=cmd_result.returncode,
                          stderr=cmd_result.stderr[:200] if not sensitive else '[REDACTED]')
         
@@ -133,17 +137,17 @@ def run_command(
         return cmd_result
         
     except subprocess.TimeoutExpired as e:
-        logger.error(f"Command timed out after {timeout}s: {log_command if not sensitive else '[REDACTED]'}")
+        logger.error(f"Command timed out after {timeout}s: {log_command}")
         if audit:
             audit_log("Command timed out", 
-                     command=log_command if not sensitive else '[REDACTED]', 
+                     command=log_command, 
                      timeout=timeout)
         raise
     except Exception as e:
-        logger.error(f"Command execution failed: {log_command if not sensitive else '[REDACTED]'}: {e}")
+        logger.error(f"Command execution failed: {log_command}: {e}")
         if audit:
             audit_log("Command execution error", 
-                     command=log_command if not sensitive else '[REDACTED]', 
+                     command=log_command, 
                      error=str(e))
         raise
 
