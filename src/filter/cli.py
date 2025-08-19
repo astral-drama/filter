@@ -266,7 +266,8 @@ def story_workspace_command(args):
         workspace_path = create_story_workspace(
             args.story_name,
             base_dir,
-            args.template
+            args.template,
+            custom_name=getattr(args, 'name', None)
         )
         print(f"Story workspace '{args.story_name}' created at: {workspace_path}")
         print(f"To start: cd {workspace_path} && docker compose up")
@@ -1229,6 +1230,10 @@ def main():
     story_workspace_parser.add_argument(
         '--base-dir',
         help='Base directory for workspaces (default: from config)'
+    )
+    story_workspace_parser.add_argument(
+        '--name',
+        help='Custom suffix for workspace name (e.g., experiment, refactor, performance)'
     )
     story_workspace_parser.set_defaults(story_func=story_workspace_command)
 
