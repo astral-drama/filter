@@ -1,8 +1,11 @@
 """Command line interface for Filter."""
 
 import argparse
+import json
 import logging
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -267,6 +270,94 @@ def workspace_command(args):
         args.func(args)
 
 
+def safe_getattr(obj, attr: str, default: str = '') -> str:
+    """Safely get attribute value with fallback to default.
+    
+    Args:
+        obj: Object to get attribute from
+        attr: Attribute name
+        default: Default value if attribute is None or empty
+        
+    Returns:
+        Attribute value or default
+    """
+    return getattr(obj, attr, default) or default
+
+
+def validate_github_repo_name(name: str) -> bool:
+    """Validate GitHub repository name according to GitHub rules.
+    
+    Args:
+        name: Repository name to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    if not name or len(name) > 100:
+        return False
+    # Allow alphanumeric, hyphens, underscores, and dots
+    return re.match(r'^[a-zA-Z0-9\-_.]+$', name) is not None
+
+
+def create_github_repository(project_name: str, github_user: str = None, description: str = "", is_private: bool = False) -> str:
+    """Create a GitHub repository using gh CLI.
+    
+    Args:
+        project_name: Name of the project/repository
+        github_user: GitHub username (if None, uses current gh user)
+        description: Repository description
+        is_private: Whether to create a private repository
+        
+    Returns:
+        URL of the created repository
+        
+    Raises:
+        RuntimeError: If gh CLI is not available or repository creation fails
+    """
+    # Validate repository name for security
+    if not validate_github_repo_name(project_name):
+        raise RuntimeError(f"Invalid repository name: '{project_name}'. Must contain only alphanumeric characters, hyphens, underscores, and dots, and be 100 characters or less.")
+    
+    # Check if gh CLI is available
+    try:
+        subprocess.run(['gh', '--version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("GitHub CLI (gh) is not installed or not in PATH. Install it from https://cli.github.com/")
+    
+    # Get current GitHub user if not specified
+    if not github_user:
+        try:
+            result = subprocess.run(['gh', 'api', 'user'], capture_output=True, text=True, check=True)
+            user_data = json.loads(result.stdout)
+            github_user = user_data.get('login')
+            if not github_user:
+                raise RuntimeError("Could not determine GitHub username")
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            raise RuntimeError("Failed to get GitHub user information. Make sure you're authenticated with 'gh auth login'")
+    
+    # Construct repository name
+    repo_name = f"{github_user}/{project_name}"
+    
+    # Build gh repo create command
+    cmd = ['gh', 'repo', 'create', repo_name]
+    
+    if is_private:
+        cmd.append('--private')
+    else:
+        cmd.append('--public')
+    
+    if description:
+        cmd.extend(['--description', description])
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        repo_url = f"https://github.com/{repo_name}.git"
+        logging.info(f"Created GitHub repository: {repo_url}")
+        return repo_url
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to create GitHub repository: {e.stderr.strip()}")
+
+
 def project_create_command(args):
     """Handle project create subcommand."""
     logging.basicConfig(level=logging.INFO)
@@ -276,12 +367,32 @@ def project_create_command(args):
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
         
+        # Handle GitHub repository creation if requested
+        git_url = safe_getattr(args, 'git_url')
+        
+        if getattr(args, 'create_repo', False):
+            if git_url:
+                print("Warning: --create-repo specified but --git-url already provided. Using existing git-url.")
+            else:
+                description = safe_getattr(args, 'description')
+                github_user = getattr(args, 'github_user', None)
+                is_private = getattr(args, 'private', False)
+                
+                print(f"Creating GitHub repository for project '{args.name}'...")
+                git_url = create_github_repository(
+                    args.name, 
+                    github_user=github_user,
+                    description=description,
+                    is_private=is_private
+                )
+                print(f"GitHub repository created: {git_url}")
+        
         project_path = create_project(
             args.name,
             base_dir,
             copy_kanban=not args.no_kanban,
-            description=getattr(args, 'description', '') or '',
-            git_url=getattr(args, 'git_url', '') or '',
+            description=safe_getattr(args, 'description'),
+            git_url=git_url,
             maintainers=getattr(args, 'maintainers', None) or []
         )
         print(f"Project '{args.name}' created at: {project_path}")
@@ -532,6 +643,22 @@ def main():
     project_create_parser.add_argument(
         '--maintainer', action='append', dest='maintainers',
         help='Project maintainer (can be used multiple times)'
+    )
+    project_create_parser.add_argument(
+        '--create-repo', action='store_true',
+        help='Create GitHub repository using gh CLI (requires --git-url or GitHub username)'
+    )
+    project_create_parser.add_argument(
+        '--github-user', 
+        help='GitHub username for repository creation (defaults to current gh user)'
+    )
+    project_create_parser.add_argument(
+        '--public', action='store_true',
+        help='Create public repository (default unless --private specified)'
+    )
+    project_create_parser.add_argument(
+        '--private', action='store_true',
+        help='Create private repository'
     )
     project_create_parser.set_defaults(func=project_create_command)
     
