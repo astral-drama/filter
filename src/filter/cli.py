@@ -28,25 +28,54 @@ from .projects import (
     find_story_in_projects,
     get_project_path
 )
-from .config import get_workspaces_directory
+from .config import get_workspaces_directory, load_config
+from .logging_config import setup_logging, get_logger, audit_log
+from .command_utils import run_command, run_git_command, ensure_command_available
+
+
+def initialize_logging():
+    """Initialize logging for Filter commands."""
+    try:
+        config = load_config()
+        setup_logging(config)
+        return get_logger(__name__)
+    except Exception as e:
+        # Fallback to basic logging if configuration fails
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(levelname)s: %(message)s'
+        )
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to initialize full logging configuration: {e}")
+        return logger
 
 
 def workspace_create_command(args):
     """Handle workspace create subcommand."""
-    logging.basicConfig(level=logging.INFO)
+    logger = initialize_logging()
+    
+    # Audit log the command
+    audit_log("workspace create command initiated", 
+             workspace_name=args.name if args.name else "list_templates",
+             template=getattr(args, 'template', 'default'))
     
     if args.list_templates:
+        logger.info("Listing available workspace templates")
         templates = list_templates()
         if not templates:
+            logger.warning("No templates found in docker/templates/")
             print("No templates found in docker/templates/")
             return
             
         print("Available workspace templates:")
         for template in templates:
             print(f"  {template['name']}: {template.get('description', 'No description')}")
+        logger.info(f"Listed {len(templates)} available templates")
         return
     
     if not args.name:
+        logger.error("Workspace name is required but not provided")
         print("Error: workspace name is required", file=sys.stderr)
         sys.exit(1)
     
@@ -285,12 +314,22 @@ def init_command(args):
             print("Use --force to reinitialize")
             sys.exit(1)
         
+        # Check for existing kanban before initialization
+        from .config import detect_existing_kanban
+        existing_kanban = detect_existing_kanban(repo_path)
+        
         # Create .filter directory structure
         filter_dir = create_filter_directory(
             repo_path,
             project_name=args.project_name,
-            prefix=args.prefix
+            prefix=args.prefix,
+            migrate_kanban=True
         )
+        
+        if existing_kanban:
+            print(f"Detected existing kanban directory at: {existing_kanban}")
+            print(f"Stories and structure migrated to: {filter_dir / 'kanban'}")
+            print(f"You may want to remove the old kanban directory: rm -rf {existing_kanban}")
         
         print(f"Filter initialized in {repo_path}")
         print(f"Created .filter directory at: {filter_dir}")
@@ -317,6 +356,144 @@ def init_command(args):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def clone_command(args):
+    """Handle filter clone command."""
+    logger = initialize_logging()
+    
+    try:
+        from .config import create_filter_directory, is_filter_repository
+        
+        # Audit log the command
+        audit_log("clone command initiated", 
+                 git_url=args.git_url if args.git_url else "missing",
+                 directory=args.directory if hasattr(args, 'directory') and args.directory else "auto")
+        
+        # Validate git URL
+        if not args.git_url:
+            logger.error("Git URL is required but not provided")
+            print("Error: git URL is required", file=sys.stderr)
+            sys.exit(1)
+            
+        # Validate git URL format for security
+        if not validate_git_url(args.git_url):
+            logger.error(f"Invalid git URL format provided: {args.git_url}")
+            print("Error: Invalid git URL format", file=sys.stderr)
+            sys.exit(1)
+        
+        # Ensure git is available
+        ensure_command_available('git', "Git is required for cloning repositories")
+        
+        # Determine target directory
+        if args.directory:
+            target_dir = Path(args.directory).resolve()
+        else:
+            # Extract repository name from URL
+            repo_name = args.git_url.rstrip('/').split('/')[-1]
+            if repo_name.endswith('.git'):
+                repo_name = repo_name[:-4]
+            target_dir = Path.cwd() / repo_name
+        
+        # Check if directory already exists
+        if target_dir.exists():
+            print(f"Error: Directory {target_dir} already exists", file=sys.stderr)
+            sys.exit(1)
+        
+        logger.info(f"Cloning repository {args.git_url} to {target_dir}")
+        print(f"Cloning repository {args.git_url} to {target_dir}")
+        
+        # Clone repository using our command utility
+        try:
+            result = run_git_command([
+                "clone", args.git_url, str(target_dir)
+            ], check=True)
+            logger.info(f"Repository cloned successfully to {target_dir}")
+            print(f"Repository cloned successfully to {target_dir}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to clone repository: {e.stderr}")
+            print(f"Error cloning repository: {e.stderr}", file=sys.stderr)
+            sys.exit(1)
+        
+        # Change to the cloned directory and initialize Filter
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(target_dir)
+            
+            # Check if already initialized
+            if is_filter_repository(target_dir) and not args.force:
+                print(f"Repository already has Filter initialized")
+                print(f"Use --force to reinitialize")
+            else:
+                # Check for existing kanban before initialization
+                from .config import detect_existing_kanban
+                existing_kanban = detect_existing_kanban(target_dir)
+                
+                # Determine project name
+                project_name = args.project_name or target_dir.name
+                
+                # Create .filter directory structure
+                filter_dir = create_filter_directory(
+                    target_dir,
+                    project_name=project_name,
+                    prefix=args.prefix,
+                    migrate_kanban=True
+                )
+                
+                if existing_kanban:
+                    print(f"Detected existing kanban directory at: {existing_kanban}")
+                    print(f"Stories and structure migrated to: {filter_dir / 'kanban'}")
+                    print(f"You may want to remove the old kanban directory: rm -rf {existing_kanban}")
+                
+                print(f"Filter initialized in {target_dir}")
+                print(f"Created .filter directory at: {filter_dir}")
+                
+                # Read the generated metadata to show prefix
+                metadata_file = filter_dir / "metadata.yaml"
+                if metadata_file.exists():
+                    import yaml
+                    with open(metadata_file, encoding='utf-8') as f:
+                        metadata = yaml.safe_load(f)
+                        prefix = metadata.get('prefix', 'unknown')
+                        project_name = metadata.get('name', 'unknown')
+                        print(f"Project: {project_name}")
+                        print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-feature)")
+            
+            print(f"\nRepository ready at: {target_dir}")
+            print("\nNext steps:")
+            print("1. Add stories to .filter/kanban/stories/")
+            print("2. Move stories to appropriate stages (planning, in-progress, etc.)")
+            print("3. Create workspaces with: filter story workspace <story-name>")
+            
+        finally:
+            os.chdir(original_cwd)
+        
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def validate_git_url(url: str) -> bool:
+    """Validate git URL format for security.
+    
+    Args:
+        url: Git URL to validate
+        
+    Returns:
+        True if URL appears to be a valid git URL
+    """
+    import re
+    
+    # Allow common git URL patterns
+    patterns = [
+        r'^https://github\.com/[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?/?$',
+        r'^git@github\.com:[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?$',
+        r'^https://gitlab\.com/[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?/?$',
+        r'^git@gitlab\.com:[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?$',
+        r'^https://[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?/?$'
+    ]
+    
+    return any(re.match(pattern, url) for pattern in patterns)
 
 
 def safe_getattr(obj, attr: str, default: str = '') -> str:
@@ -444,6 +621,7 @@ def project_create_command(args):
             git_url=git_url,
             maintainers=getattr(args, 'maintainers', None) or []
         )
+        
         print(f"Project '{args.name}' created at: {project_path}")
         
         # Load and display the generated config
@@ -679,6 +857,32 @@ def main():
         help='Force initialization even if .filter directory exists'
     )
     init_parser.set_defaults(func=init_command)
+
+    # Clone command
+    clone_parser = subparsers.add_parser(
+        'clone', help='Clone a repository and initialize Filter'
+    )
+    clone_parser.add_argument(
+        'git_url',
+        help='Git repository URL to clone'
+    )
+    clone_parser.add_argument(
+        'directory', nargs='?',
+        help='Target directory (defaults to repository name)'
+    )
+    clone_parser.add_argument(
+        '--project-name',
+        help='Project name (defaults to repository directory name)'
+    )
+    clone_parser.add_argument(
+        '--prefix',
+        help='Story prefix (auto-generated if not provided)'
+    )
+    clone_parser.add_argument(
+        '--force', '-f', action='store_true',
+        help='Force initialization even if .filter directory exists'
+    )
+    clone_parser.set_defaults(func=clone_command)
 
     # Project command with subcommands
     project_parser = subparsers.add_parser('project', help='Manage projects')

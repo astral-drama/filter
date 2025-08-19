@@ -4,3 +4,37 @@ kanban_directory: ./kanban
 git_author_name: Filter Bot
 git_author_email: bot@filter-kanban.dev
 base_branch: main
+templates_directory: docker/templates
+
+# Logging configuration
+logging:
+  level: INFO
+  console:
+    enabled: true
+    level: INFO
+    format: "%(levelname)s: %(message)s"
+  file:
+    enabled: true
+    path: ~/.filter/logs/filter.log
+    level: DEBUG
+    max_size_mb: 10
+    backup_count: 3
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+  audit:
+    enabled: true
+    path: ~/.filter/logs/filter-audit.log
+    max_size_mb: 50
+    backup_count: 10
+    console: false
+    format: "%(asctime)s - AUDIT - %(message)s"
+  commands:
+    enabled: true
+    path: ~/.filter/logs/filter-commands.log
+    max_size_mb: 20
+    backup_count: 5
+    format: "%(asctime)s - CMD - %(message)s"
+  third_party:
+    urllib3: WARNING
+    requests: WARNING
+    docker: WARNING
+    git: WARNING

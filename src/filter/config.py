@@ -23,6 +23,29 @@ def get_default_paths() -> Dict[str, str]:
     }
 
 
+def get_default_config() -> Dict[str, Any]:
+    """Get complete default configuration including logging.
+    
+    Returns:
+        Complete default configuration dictionary
+    """
+    from .logging_config import get_default_logging_config
+    
+    config = get_default_paths()
+    config.update({
+        "git_author_name": "Filter Bot",
+        "git_author_email": "bot@filter-kanban.dev",
+        "base_branch": "main",
+        "templates_directory": "docker/templates"
+    })
+    
+    # Add logging configuration
+    logging_config = get_default_logging_config()
+    config.update(logging_config)
+    
+    return config
+
+
 def find_filter_directory(start_dir: Optional[Path] = None) -> Optional[Path]:
     """Find .filter/ directory by searching up the directory tree.
     
@@ -99,8 +122,8 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     Raises:
         yaml.YAMLError: If config.yaml is invalid
     """
-    # Start with platform-appropriate defaults
-    config = get_default_paths()
+    # Start with complete default configuration
+    config = get_default_config()
     
     if config_path is None:
         config_path = find_config_file()
@@ -244,7 +267,72 @@ def get_kanban_directory(config: Optional[Dict[str, Any]] = None) -> Path:
     return Path.cwd() / ".filter" / "kanban"
 
 
-def create_filter_directory(repo_path: Path, project_name: str = None, prefix: str = None) -> Path:
+def detect_existing_kanban(repo_path: Path) -> Optional[Path]:
+    """Detect existing kanban directory in repository.
+    
+    Args:
+        repo_path: Path to the repository root
+        
+    Returns:
+        Path to existing kanban directory if found, None otherwise
+    """
+    kanban_dir = repo_path / "kanban"
+    if kanban_dir.exists() and kanban_dir.is_dir():
+        # Check if it has some kanban-like structure
+        expected_dirs = ['stories', 'planning', 'in-progress', 'testing', 'pr', 'complete']
+        existing_dirs = [d.name for d in kanban_dir.iterdir() if d.is_dir()]
+        
+        # If it has at least 2 expected directories, consider it a kanban structure
+        if len(set(expected_dirs) & set(existing_dirs)) >= 2:
+            return kanban_dir
+    
+    return None
+
+
+def migrate_existing_kanban(source_kanban: Path, target_kanban: Path) -> bool:
+    """Migrate existing kanban structure to .filter/kanban.
+    
+    Args:
+        source_kanban: Existing kanban directory
+        target_kanban: Target .filter/kanban directory
+        
+    Returns:
+        True if migration was successful
+    """
+    import shutil
+    
+    try:
+        print(f"Migrating existing kanban from {source_kanban} to {target_kanban}")
+        
+        # Copy all contents from source to target
+        for item in source_kanban.iterdir():
+            if item.is_dir():
+                target_dir = target_kanban / item.name
+                if target_dir.exists():
+                    # Merge directories - copy files but don't overwrite .gitkeep
+                    for subitem in item.iterdir():
+                        if subitem.name != '.gitkeep':
+                            target_file = target_dir / subitem.name
+                            if subitem.is_file():
+                                shutil.copy2(subitem, target_file)
+                            elif subitem.is_dir():
+                                shutil.copytree(subitem, target_file, dirs_exist_ok=True)
+                else:
+                    # Copy entire directory
+                    shutil.copytree(item, target_dir)
+            elif item.is_file():
+                # Copy files to target kanban root
+                shutil.copy2(item, target_kanban / item.name)
+        
+        print(f"Migration completed successfully")
+        return True
+        
+    except Exception as e:
+        print(f"Error during migration: {e}")
+        return False
+
+
+def create_filter_directory(repo_path: Path, project_name: str = None, prefix: str = None, migrate_kanban: bool = True) -> Path:
     """Create .filter directory structure in a repository.
     
     Args:
@@ -261,6 +349,12 @@ def create_filter_directory(repo_path: Path, project_name: str = None, prefix: s
     # Create kanban structure
     kanban_dir = filter_dir / "kanban"
     create_kanban_structure(kanban_dir)
+    
+    # Check for existing kanban to migrate
+    if migrate_kanban:
+        existing_kanban = detect_existing_kanban(repo_path)
+        if existing_kanban:
+            migrate_existing_kanban(existing_kanban, kanban_dir)
     
     # Create metadata file
     if project_name is None:
