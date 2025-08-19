@@ -518,6 +518,16 @@ def create_story_workspace(
         'kanban_directory': str(kanban_dir)
     }
     
+    # Determine base directory for story workspace
+    if base_dir is None:
+        # Default to project's .filter/workspaces directory for better organization
+        filter_dir = project_dir / ".filter"
+        if filter_dir.exists():
+            base_dir = filter_dir / "workspaces"
+        else:
+            # Fallback to global workspaces directory if no .filter directory
+            base_dir = get_workspaces_directory()
+    
     # Use the existing create_workspace function with story context
     workspace_dir = create_workspace(
         workspace_name=story_name,
