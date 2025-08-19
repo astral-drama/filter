@@ -2,6 +2,176 @@
 
 This document provides examples and guidance for Claude to effectively work with the Filter workspace system.
 
+## Development Standards and Patterns
+
+### Logging and Auditing
+
+The Filter project implements comprehensive logging and auditing for all operations. **Always follow these patterns:**
+
+#### Command Execution
+
+**✅ Use the command utilities:**
+```python
+from .command_utils import run_command, run_git_command, run_docker_command
+
+# Git operations
+result = run_git_command(
+    ["worktree", "add", "-b", branch_name, str(path)],
+    cwd=project_dir,
+    check=False
+)
+
+# General commands
+result = run_command(
+    ["docker", "compose", "up", "-d"],
+    cwd=workspace_dir,
+    audit=True,
+    sensitive=False
+)
+```
+
+**❌ Never use raw subprocess:**
+```python
+# DON'T DO THIS
+subprocess.run(["git", "status"], cwd=project_dir)  # No logging/auditing
+```
+
+#### Logging Patterns
+
+**✅ Use structured logging with context:**
+```python
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
+
+# Good logging with context
+logger.info(f"Creating git worktree for workspace: {workspace_name}",
+           extra={'workspace_name': workspace_name, 'worktree_path': str(path)})
+
+# Error logging with structured data
+logger.error(f"Failed to create worktree: {error}",
+            extra={'workspace_name': workspace_name, 'error': str(error)})
+```
+
+**❌ Basic logging without context:**
+```python
+# DON'T DO THIS
+logger.info("Creating worktree")  # No context
+```
+
+#### Error Handling
+
+**✅ Use CommandResult pattern:**
+```python
+result = run_git_command(["status"], cwd=project_dir, check=False)
+
+if result.success:
+    logger.info(f"Command succeeded: {result.stdout}")
+else:
+    logger.warning(f"Command failed: {result.stderr}")
+    # Handle error appropriately
+```
+
+**❌ Raw exception handling:**
+```python
+# DON'T DO THIS
+try:
+    subprocess.run(["git", "status"], check=True)
+except subprocess.CalledProcessError as e:
+    # No structured logging
+```
+
+### Code Organization
+
+#### DRY Principles
+
+**✅ Extract common patterns:**
+```python
+def _validate_git_repository(project_dir: Path) -> bool:
+    """Reusable validation helper."""
+    git_dir = project_dir / ".git"
+    return git_dir.exists() and project_dir.is_dir()
+
+# Use the helper consistently
+if not _validate_git_repository(project_dir):
+    raise RuntimeError(f"Invalid git repository: {project_dir}")
+```
+
+#### Function Structure
+
+**✅ Follow this pattern:**
+```python
+def create_git_worktree(project_dir: Path, workspace_dir: Path, workspace_name: str) -> None:
+    """Clear docstring with Args, Raises, etc."""
+    
+    # 1. Input validation
+    if not _validate_git_repository(project_dir):
+        raise RuntimeError(f"Invalid repository: {project_dir}")
+    
+    # 2. Log operation start with context
+    logger.info(f"Creating git worktree: {workspace_name}",
+               extra={'workspace_name': workspace_name, 'project_dir': str(project_dir)})
+    
+    # 3. Execute operations with proper error handling
+    try:
+        result = run_git_command(["worktree", "add", "-b", workspace_name, str(path)], 
+                               cwd=project_dir, check=False)
+        
+        if result.success:
+            logger.info(f"Successfully created worktree: {workspace_name}")
+        else:
+            raise RuntimeError(f"Worktree creation failed: {result.stderr}")
+            
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", extra={'workspace_name': workspace_name})
+        raise
+```
+
+### Import Patterns
+
+**✅ Standard imports:**
+```python
+from .command_utils import run_command, run_git_command, CommandResult
+from .logging_config import get_logger
+from .config import get_workspaces_directory
+
+logger = get_logger(__name__)  # Not logging.getLogger()
+```
+
+### Audit Requirements
+
+**All sensitive operations must be audited:**
+- File system operations (create, delete, move)
+- Git operations (clone, commit, branch, worktree)
+- Docker operations (build, run, stop)
+- Configuration changes
+
+**Audit logging is automatic** when using command utilities with `audit=True` (default).
+
+### Error Message Standards
+
+**✅ Descriptive error messages with context:**
+```python
+raise RuntimeError(f"Failed to create worktree '{workspace_name}' at {path}: {result.stderr}")
+```
+
+**❌ Generic error messages:**
+```python
+raise RuntimeError("Git command failed")  # Not helpful
+```
+
+### Testing Patterns
+
+**✅ Test with proper cleanup:**
+```python
+def test_git_worktree_creation():
+    # Test implementation
+    # Always clean up test artifacts
+    cleanup_git_worktree(test_workspace_dir, test_workspace_name)
+```
+
+---
+
 ## Quick Workspace Creation
 
 To create a new Docker workspace for development, use the CLI command:
