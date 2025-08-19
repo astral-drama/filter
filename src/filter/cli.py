@@ -8,29 +8,34 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from dotenv import load_dotenv
-import yaml
 
-from .workspace import (
-    create_workspace, 
-    list_templates, 
-    render_template, 
-    exec_workspace_command,
-    stop_workspace,
-    delete_workspace,
-    create_story_workspace
+import yaml
+from dotenv import load_dotenv
+from jinja2 import Environment, FileSystemLoader
+
+from .command_utils import (
+    check_command_available,
+    ensure_command_available,
+    run_command,
+    run_git_command,
 )
+from .config import load_config
+from .logging_config import audit_log, get_logger, setup_logging
 from .projects import (
     create_project,
-    list_projects,
     delete_project,
     find_story_in_projects,
-    get_project_path
+    list_projects,
 )
-from .config import get_workspaces_directory, load_config
-from .logging_config import setup_logging, get_logger, audit_log
-from .command_utils import run_command, run_git_command, ensure_command_available
+from .workspace import (
+    create_story_workspace,
+    create_workspace,
+    delete_workspace,
+    exec_workspace_command,
+    list_templates,
+    render_template,
+    stop_workspace,
+)
 
 
 def initialize_logging():
@@ -54,12 +59,12 @@ def initialize_logging():
 def workspace_create_command(args):
     """Handle workspace create subcommand."""
     logger = initialize_logging()
-    
+
     # Audit log the command
-    audit_log("workspace create command initiated", 
+    audit_log("workspace create command initiated",
              workspace_name=args.name if args.name else "list_templates",
              template=getattr(args, 'template', 'default'))
-    
+
     if args.list_templates:
         logger.info("Listing available workspace templates")
         templates = list_templates()
@@ -67,25 +72,25 @@ def workspace_create_command(args):
             logger.warning("No templates found in docker/templates/")
             print("No templates found in docker/templates/")
             return
-            
+
         print("Available workspace templates:")
         for template in templates:
             print(f"  {template['name']}: {template.get('description', 'No description')}")
         logger.info(f"Listed {len(templates)} available templates")
         return
-    
+
     if not args.name:
         logger.error("Workspace name is required but not provided")
         print("Error: workspace name is required", file=sys.stderr)
         sys.exit(1)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
         workspace_path = create_workspace(
-            args.name, 
-            base_dir, 
+            args.name,
+            base_dir,
             args.template
         )
         print(f"Workspace '{args.name}' created at: {workspace_path}")
@@ -101,7 +106,7 @@ def workspace_create_command(args):
 def workspace_down_command(args):
     """Handle workspace down subcommand."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
@@ -116,7 +121,7 @@ def workspace_down_command(args):
 def workspace_delete_command(args):
     """Handle workspace delete subcommand."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
@@ -130,13 +135,12 @@ def workspace_delete_command(args):
 
 def story_create_command(args):
     """Handle story creation using template."""
-    import re
     import yaml
-    from jinja2 import Environment, FileSystemLoader
+
     from .config import get_projects_directory
-    
+
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         # Find project for this story prefix or ask user to specify
         if hasattr(args, 'project') and args.project:
@@ -149,34 +153,34 @@ def story_create_command(args):
             # TODO: Could auto-detect from story_id prefix in the future
             print("Error: --project is required for story creation", file=sys.stderr)
             sys.exit(1)
-        
+
         # Read project config
         config_file = project_dir / "project.yaml"
         if not config_file.exists():
             raise RuntimeError(f"Project config not found: {config_file}")
-            
+
         with open(config_file) as f:
             project_config = yaml.safe_load(f)
-        
+
         # Generate story ID if not provided
         if hasattr(args, 'story_id') and args.story_id:
             story_id = args.story_id
         else:
             # Auto-generate next story ID
             story_id = generate_next_story_id(project_dir, project_config.get('prefix', project_name[:5]))
-        
+
         # Get required information
         story_description = args.description
         repository = project_config.get('git_url', '')
         branch_from = getattr(args, 'branch_from', 'main')
         merge_to = getattr(args, 'merge_to', 'main')
         feature_branch = f"{story_id}-{args.feature_suffix}" if hasattr(args, 'feature_suffix') and args.feature_suffix else story_id
-        
+
         # Load and render template
         template_dir = Path(__file__).parent.parent.parent / "story" / "templates"
         env = Environment(loader=FileSystemLoader(template_dir))
         template = env.get_template("default.md.j2")
-        
+
         rendered = template.render(
             story_id=story_id,
             story_description=story_description,
@@ -185,17 +189,17 @@ def story_create_command(args):
             merge_to=merge_to,
             feature_branch=feature_branch
         )
-        
+
         # Write story file
         story_file = project_dir / "kanban" / "stories" / f"{story_id}.md"
         story_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(story_file, 'w') as f:
             f.write(rendered)
-        
+
         print(f"Story '{story_id}' created at: {story_file}")
         print(f"To create workspace: filter story workspace {story_id}")
-        
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -204,47 +208,47 @@ def story_create_command(args):
 def generate_next_story_id(project_dir: Path, prefix: str) -> str:
     """Generate the next story ID by looking at existing stories."""
     import re
-    
+
     stories_dir = project_dir / "kanban" / "stories"
     if not stories_dir.exists():
         return f"{prefix}-1"
-    
+
     max_id = 0
     pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)\.md$")
-    
+
     for story_file in stories_dir.glob("*.md"):
         match = pattern.match(story_file.name)
         if match:
             story_num = int(match.group(1))
             max_id = max(max_id, story_num)
-    
+
     return f"{prefix}-{max_id + 1}"
 
 
 def story_delete_command(args):
     """Handle story deletion."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         # Find the story
         story_info = find_story_in_projects(args.story_id)
         if not story_info:
             raise RuntimeError(f"Story '{args.story_id}' not found in any project")
-        
+
         story_file = story_info['story_file']
         project_name = story_info['project_name']
-        
+
         # Confirm deletion unless forced
         if not args.force:
             response = input(f"Delete story '{args.story_id}' from project '{project_name}'? (y/N): ")
             if response.lower() != 'y':
                 print("Deletion cancelled")
                 return
-        
+
         # Delete the story file
         story_file.unlink()
         print(f"Story '{args.story_id}' deleted from project '{project_name}'")
-        
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -253,12 +257,12 @@ def story_delete_command(args):
 def story_workspace_command(args):
     """Handle story workspace creation."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
-            
+
         workspace_path = create_story_workspace(
             args.story_name,
             base_dir,
@@ -266,7 +270,7 @@ def story_workspace_command(args):
         )
         print(f"Story workspace '{args.story_name}' created at: {workspace_path}")
         print(f"To start: cd {workspace_path} && docker compose up")
-        
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -279,7 +283,7 @@ def story_command(args):
         print("Error: story command requires a subcommand (create, delete, workspace)", file=sys.stderr)
         print("Use 'filter story --help' for more information")
         sys.exit(1)
-    
+
     args.story_func(args)
 
 
@@ -302,22 +306,22 @@ def workspace_command(args):
 def init_command(args):
     """Handle filter init command."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         from .config import create_filter_directory, is_filter_repository
-        
+
         repo_path = Path.cwd()
-        
+
         # Check if already initialized
         if is_filter_repository(repo_path) and not args.force:
             print(f"Error: Filter already initialized in {repo_path}")
             print("Use --force to reinitialize")
             sys.exit(1)
-        
+
         # Check for existing kanban before initialization
         from .config import detect_existing_kanban
         existing_kanban = detect_existing_kanban(repo_path)
-        
+
         # Create .filter directory structure
         filter_dir = create_filter_directory(
             repo_path,
@@ -325,18 +329,18 @@ def init_command(args):
             prefix=args.prefix,
             migrate_kanban=True
         )
-        
+
         if existing_kanban:
             print(f"Detected existing kanban directory at: {existing_kanban}")
             print(f"Stories and structure migrated to: {filter_dir / 'kanban'}")
             print(f"You may want to remove the old kanban directory: rm -rf {existing_kanban}")
-        
+
         print(f"Filter initialized in {repo_path}")
         print(f"Created .filter directory at: {filter_dir}")
         print(f"Kanban board available at: {filter_dir / 'kanban'}")
         print(f"Project metadata: {filter_dir / 'metadata.yaml'}")
         print(f"Repository config: {filter_dir / 'config.yaml'}")
-        
+
         # Read the generated metadata to show prefix
         metadata_file = filter_dir / "metadata.yaml"
         if metadata_file.exists():
@@ -347,62 +351,204 @@ def init_command(args):
                 project_name = metadata.get('name', 'unknown')
                 print(f"Project: {project_name}")
                 print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-feature)")
-        
+
         print("\nNext steps:")
         print("1. Add stories to .filter/kanban/stories/")
         print("2. Move stories to appropriate stages (planning, in-progress, etc.)")
         print("3. Create workspaces with: filter story workspace <story-name>")
-        
+
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
+def check_git_push_access(repo_path: Path, remote: str = "origin") -> bool:
+    """Check if we have push access to a git repository.
+    
+    Args:
+        repo_path: Path to the git repository
+        remote: Remote name to check (default: origin)
+        
+    Returns:
+        True if push access is available, False otherwise
+    """
+    try:
+        # Use git push --dry-run to test push access without actually pushing
+        result = run_git_command([
+            "push", "--dry-run", remote, "HEAD"
+        ], cwd=repo_path, check=False)
+
+        # If dry-run succeeds, we have push access
+        return result.success
+    except Exception:
+        return False
+
+
+def parse_github_url(url: str) -> tuple[str, str]:
+    """Parse GitHub URL and return (owner, repo) tuple.
+    
+    Args:
+        url: GitHub repository URL
+        
+    Returns:
+        Tuple of (owner, repo_name)
+        
+    Raises:
+        RuntimeError: If URL is not a valid GitHub repository URL
+    """
+    if not url.startswith("https://github.com/"):
+        raise RuntimeError("Not a GitHub repository URL")
+
+    path = url.replace("https://github.com/", "").rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+
+    parts = path.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise RuntimeError("Invalid GitHub repository path")
+
+    # Validate owner and repo names for security
+    owner, repo = parts[0], parts[1]
+    if not validate_github_repo_name(owner) or not validate_github_repo_name(repo):
+        raise RuntimeError("Invalid GitHub owner or repository name")
+
+    return owner, repo
+
+
+def sanitize_directory_name(name: str) -> str:
+    """Sanitize directory name to prevent path traversal.
+    
+    Args:
+        name: Directory name to sanitize
+        
+    Returns:
+        Safe directory name
+    """
+    import re
+
+    # Remove path separators and dangerous characters
+    safe_name = re.sub(r'[^\w\-\.]', '_', name)
+    # Prevent empty or hidden directories
+    if not safe_name or safe_name.startswith('.'):
+        safe_name = "repository"
+    # Limit length and remove trailing dots
+    return safe_name[:50].rstrip('.')
+
+
+def configure_fork_remotes(fork_url: str, original_url: str, target_dir: Path) -> None:
+    """Configure git remotes for fork workflow with validation.
+    
+    Args:
+        fork_url: URL of the forked repository
+        original_url: URL of the original repository
+        target_dir: Local repository directory
+        
+    Raises:
+        RuntimeError: If URL validation fails
+    """
+    # Validate URLs before using them in git commands
+    if not validate_git_url(fork_url) or not validate_git_url(original_url):
+        raise RuntimeError("Invalid git URL provided for remote configuration")
+
+    try:
+        # Update remote origin to point to fork
+        run_git_command(["remote", "set-url", "origin", fork_url], cwd=target_dir, check=True)
+
+        # Add upstream remote pointing to original repository
+        run_git_command(["remote", "add", "upstream", original_url], cwd=target_dir, check=True)
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to configure git remotes: {e.stderr}")
+
+
+def create_github_fork(original_url: str) -> str:
+    """Create a fork of a GitHub repository using gh CLI.
+    
+    Args:
+        original_url: Original repository URL
+        
+    Returns:
+        URL of the forked repository
+        
+    Raises:
+        RuntimeError: If gh CLI is not available or fork creation fails
+    """
+    # Parse and validate GitHub URL
+    owner, repo = parse_github_url(original_url)
+    repo_path = f"{owner}/{repo}"
+
+    # Check if gh CLI is available
+    ensure_command_available('gh', "GitHub CLI (gh) is required for fork creation. Install from https://cli.github.com/")
+
+    try:
+        # Create fork using gh CLI
+        result = run_command(['gh', 'repo', 'fork', repo_path, '--clone=false'], check=True)
+
+        # Get current GitHub user to construct fork URL
+        user_result = run_command(['gh', 'api', 'user'], check=True)
+        user_data = json.loads(user_result.stdout)
+        github_user = user_data.get('login')
+
+        if not github_user:
+            raise RuntimeError("Could not determine GitHub username")
+
+        # Validate the username for security
+        if not validate_github_repo_name(github_user):
+            raise RuntimeError("Invalid GitHub username returned from API")
+
+        fork_url = f"https://github.com/{github_user}/{repo}.git"
+        return fork_url
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to create fork: {e.stderr}")
+
+
 def clone_command(args):
     """Handle filter clone command."""
     logger = initialize_logging()
-    
+
     try:
         from .config import create_filter_directory, is_filter_repository
-        
+
         # Audit log the command
-        audit_log("clone command initiated", 
+        audit_log("clone command initiated",
                  git_url=args.git_url if args.git_url else "missing",
                  directory=args.directory if hasattr(args, 'directory') and args.directory else "auto")
-        
+
         # Validate git URL
         if not args.git_url:
             logger.error("Git URL is required but not provided")
             print("Error: git URL is required", file=sys.stderr)
             sys.exit(1)
-            
+
         # Validate git URL format for security
         if not validate_git_url(args.git_url):
             logger.error(f"Invalid git URL format provided: {args.git_url}")
             print("Error: Invalid git URL format", file=sys.stderr)
             sys.exit(1)
-        
+
         # Ensure git is available
         ensure_command_available('git', "Git is required for cloning repositories")
-        
+
         # Determine target directory
         if args.directory:
             target_dir = Path(args.directory).resolve()
         else:
-            # Extract repository name from URL
+            # Extract repository name from URL and sanitize for security
             repo_name = args.git_url.rstrip('/').split('/')[-1]
             if repo_name.endswith('.git'):
                 repo_name = repo_name[:-4]
-            target_dir = Path.cwd() / repo_name
-        
+            safe_repo_name = sanitize_directory_name(repo_name)
+            target_dir = Path.cwd() / safe_repo_name
+
         # Check if directory already exists
         if target_dir.exists():
             print(f"Error: Directory {target_dir} already exists", file=sys.stderr)
             sys.exit(1)
-        
+
         logger.info(f"Cloning repository {args.git_url} to {target_dir}")
         print(f"Cloning repository {args.git_url} to {target_dir}")
-        
+
         # Clone repository using our command utility
         try:
             result = run_git_command([
@@ -414,24 +560,56 @@ def clone_command(args):
             logger.error(f"Failed to clone repository: {e.stderr}")
             print(f"Error cloning repository: {e.stderr}", file=sys.stderr)
             sys.exit(1)
-        
+
         # Change to the cloned directory and initialize Filter
         original_cwd = Path.cwd()
         try:
             os.chdir(target_dir)
-            
+
+            # Check push access to the repository
+            has_push_access = check_git_push_access(target_dir)
+
+            if not has_push_access and not getattr(args, 'no_fork', False):
+                # Ask user if they want to create a fork
+                print("\n⚠️  You don't have push access to this repository.")
+
+                # Check if this is a GitHub repository and gh CLI is available
+                if "github.com" in args.git_url and check_command_available('gh'):
+                    response = input("Would you like to create a fork? (y/N): ")
+                    if response.lower() == 'y':
+                        try:
+                            print("Creating fork...")
+                            fork_url = create_github_fork(args.git_url)
+                            print(f"Fork created: {fork_url}")
+
+                            # Configure remotes securely
+                            print("Updating remote origin to point to your fork...")
+                            configure_fork_remotes(fork_url, args.git_url, target_dir)
+
+                            print("✅ Repository configured with fork as origin and original as upstream")
+
+                        except RuntimeError as e:
+                            print(f"⚠️  Fork creation failed: {e}")
+                            print("You can continue working with read-only access to the original repository.")
+                    else:
+                        print("Continuing with read-only access to the original repository.")
+                        print("You won't be able to push changes directly.")
+                else:
+                    print("Fork creation requires GitHub CLI (gh) and a GitHub repository.")
+                    print("Continuing with read-only access to the original repository.")
+
             # Check if already initialized
             if is_filter_repository(target_dir) and not args.force:
-                print(f"Repository already has Filter initialized")
-                print(f"Use --force to reinitialize")
+                print("Repository already has Filter initialized")
+                print("Use --force to reinitialize")
             else:
                 # Check for existing kanban before initialization
                 from .config import detect_existing_kanban
                 existing_kanban = detect_existing_kanban(target_dir)
-                
+
                 # Determine project name
                 project_name = args.project_name or target_dir.name
-                
+
                 # Create .filter directory structure
                 filter_dir = create_filter_directory(
                     target_dir,
@@ -439,15 +617,15 @@ def clone_command(args):
                     prefix=args.prefix,
                     migrate_kanban=True
                 )
-                
+
                 if existing_kanban:
                     print(f"Detected existing kanban directory at: {existing_kanban}")
                     print(f"Stories and structure migrated to: {filter_dir / 'kanban'}")
                     print(f"You may want to remove the old kanban directory: rm -rf {existing_kanban}")
-                
+
                 print(f"Filter initialized in {target_dir}")
                 print(f"Created .filter directory at: {filter_dir}")
-                
+
                 # Read the generated metadata to show prefix
                 metadata_file = filter_dir / "metadata.yaml"
                 if metadata_file.exists():
@@ -458,16 +636,16 @@ def clone_command(args):
                         project_name = metadata.get('name', 'unknown')
                         print(f"Project: {project_name}")
                         print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-feature)")
-            
+
             print(f"\nRepository ready at: {target_dir}")
             print("\nNext steps:")
             print("1. Add stories to .filter/kanban/stories/")
             print("2. Move stories to appropriate stages (planning, in-progress, etc.)")
             print("3. Create workspaces with: filter story workspace <story-name>")
-            
+
         finally:
             os.chdir(original_cwd)
-        
+
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -483,7 +661,7 @@ def validate_git_url(url: str) -> bool:
         True if URL appears to be a valid git URL
     """
     import re
-    
+
     # Allow common git URL patterns
     patterns = [
         r'^https://github\.com/[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?/?$',
@@ -492,7 +670,7 @@ def validate_git_url(url: str) -> bool:
         r'^git@gitlab\.com:[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?$',
         r'^https://[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+/[a-zA-Z0-9\-_\.]+(?:\.git)?/?$'
     ]
-    
+
     return any(re.match(pattern, url) for pattern in patterns)
 
 
@@ -543,13 +721,13 @@ def create_github_repository(project_name: str, github_user: str = None, descrip
     # Validate repository name for security
     if not validate_github_repo_name(project_name):
         raise RuntimeError(f"Invalid repository name: '{project_name}'. Must contain only alphanumeric characters, hyphens, underscores, and dots, and be 100 characters or less.")
-    
+
     # Check if gh CLI is available
     try:
         subprocess.run(['gh', '--version'], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise RuntimeError("GitHub CLI (gh) is not installed or not in PATH. Install it from https://cli.github.com/")
-    
+
     # Get current GitHub user if not specified
     if not github_user:
         try:
@@ -560,21 +738,21 @@ def create_github_repository(project_name: str, github_user: str = None, descrip
                 raise RuntimeError("Could not determine GitHub username")
         except (subprocess.CalledProcessError, json.JSONDecodeError):
             raise RuntimeError("Failed to get GitHub user information. Make sure you're authenticated with 'gh auth login'")
-    
+
     # Construct repository name
     repo_name = f"{github_user}/{project_name}"
-    
+
     # Build gh repo create command
     cmd = ['gh', 'repo', 'create', repo_name]
-    
+
     if is_private:
         cmd.append('--private')
     else:
         cmd.append('--public')
-    
+
     if description:
         cmd.extend(['--description', description])
-    
+
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         repo_url = f"https://github.com/{repo_name}.git"
@@ -587,15 +765,15 @@ def create_github_repository(project_name: str, github_user: str = None, descrip
 def project_create_command(args):
     """Handle project create subcommand."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
-        
+
         # Handle GitHub repository creation if requested
         git_url = safe_getattr(args, 'git_url')
-        
+
         if getattr(args, 'create_repo', False):
             if git_url:
                 print("Warning: --create-repo specified but --git-url already provided. Using existing git-url.")
@@ -603,16 +781,16 @@ def project_create_command(args):
                 description = safe_getattr(args, 'description')
                 github_user = getattr(args, 'github_user', None)
                 is_private = getattr(args, 'private', False)
-                
+
                 print(f"Creating GitHub repository for project '{args.name}'...")
                 git_url = create_github_repository(
-                    args.name, 
+                    args.name,
                     github_user=github_user,
                     description=description,
                     is_private=is_private
                 )
                 print(f"GitHub repository created: {git_url}")
-        
+
         project_path = create_project(
             args.name,
             base_dir,
@@ -621,21 +799,21 @@ def project_create_command(args):
             git_url=git_url,
             maintainers=getattr(args, 'maintainers', None) or []
         )
-        
+
         print(f"Project '{args.name}' created at: {project_path}")
-        
+
         # Load and display the generated config
-        from .projects import load_project_config, generate_project_prefix
+        from .projects import generate_project_prefix, load_project_config
         config = load_project_config(project_path)
         if config:
             prefix = config.get('prefix', generate_project_prefix(args.name))
             print(f"Story prefix: {prefix} (use for stories like {prefix}-1, {prefix}-2-refactor)")
-        
+
         if not args.no_kanban:
             print(f"Kanban structure available at: {project_path / 'kanban'}")
-        
+
         print(f"Project config: {project_path / 'project.yaml'}")
-        
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -647,7 +825,7 @@ def project_list_command(args):
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
-            
+
         projects = list_projects(base_dir)
         if projects:
             print("Available projects:")
@@ -655,7 +833,7 @@ def project_list_command(args):
                 print(f"  {project}")
         else:
             print("No projects found.")
-            
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -664,15 +842,15 @@ def project_list_command(args):
 def project_delete_command(args):
     """Handle project delete subcommand."""
     logging.basicConfig(level=logging.INFO)
-    
+
     try:
         base_dir = None
         if hasattr(args, 'base_dir') and args.base_dir:
             base_dir = Path(args.base_dir)
-            
+
         delete_project(args.name, base_dir, args.force)
         print(f"Project '{args.name}' deleted successfully")
-        
+
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -696,7 +874,7 @@ def claude_command(args):
         if hasattr(args, 'resume') and args.resume:
             command.append("-r")
         command.append("--dangerously-skip-permissions")
-        
+
         exit_code = exec_workspace_command(args.workspace, command)
         sys.exit(exit_code)
     except RuntimeError as e:
@@ -725,7 +903,7 @@ def template_command(args):
     # 1. Load from YAML config file (lowest priority)
     if Path(args.config).exists():
         try:
-            with open(args.config, 'r') as f:
+            with open(args.config) as f:
                 config_data = yaml.safe_load(f)
                 if config_data:
                     context.update(config_data)
@@ -785,7 +963,7 @@ def main():
     workspace_subparsers = workspace_parser.add_subparsers(
         dest='workspace_action', help='Workspace actions'
     )
-    
+
     # Create subcommand (default action)
     create_parser = workspace_subparsers.add_parser(
         'create', help='Create a new Docker workspace'
@@ -806,7 +984,7 @@ def main():
         help='List available templates'
     )
     create_parser.set_defaults(func=workspace_create_command)
-    
+
     # Down subcommand
     down_parser = workspace_subparsers.add_parser(
         'down', help='Stop a running workspace'
@@ -819,7 +997,7 @@ def main():
         help='Base directory for workspaces (default: from config)'
     )
     down_parser.set_defaults(func=workspace_down_command)
-    
+
     # Delete subcommand
     delete_parser = workspace_subparsers.add_parser(
         'delete', help='Delete a workspace'
@@ -836,7 +1014,7 @@ def main():
         help='Force delete running workspace (stops it first)'
     )
     delete_parser.set_defaults(func=workspace_delete_command)
-    
+
     # Set default routing function for workspace command
     workspace_parser.set_defaults(func=workspace_command)
 
@@ -845,7 +1023,7 @@ def main():
         'init', help='Initialize Filter in a repository'
     )
     init_parser.add_argument(
-        '--project-name', 
+        '--project-name',
         help='Project name (defaults to repository directory name)'
     )
     init_parser.add_argument(
@@ -882,12 +1060,16 @@ def main():
         '--force', '-f', action='store_true',
         help='Force initialization even if .filter directory exists'
     )
+    clone_parser.add_argument(
+        '--no-fork', action='store_true',
+        help='Skip fork creation even if push access is denied'
+    )
     clone_parser.set_defaults(func=clone_command)
 
     # Project command with subcommands
     project_parser = subparsers.add_parser('project', help='Manage projects')
     project_subparsers = project_parser.add_subparsers(dest='project_action', help='Project actions')
-    
+
     # Create subcommand
     project_create_parser = project_subparsers.add_parser(
         'create', help='Create a new project'
@@ -904,7 +1086,7 @@ def main():
         help='Do not copy kanban structure to project'
     )
     project_create_parser.add_argument(
-        '--description', 
+        '--description',
         help='Project description'
     )
     project_create_parser.add_argument(
@@ -920,7 +1102,7 @@ def main():
         help='Create GitHub repository using gh CLI (requires --git-url or GitHub username)'
     )
     project_create_parser.add_argument(
-        '--github-user', 
+        '--github-user',
         help='GitHub username for repository creation (defaults to current gh user)'
     )
     project_create_parser.add_argument(
@@ -932,7 +1114,7 @@ def main():
         help='Create private repository'
     )
     project_create_parser.set_defaults(func=project_create_command)
-    
+
     # List subcommand
     project_list_parser = project_subparsers.add_parser(
         'list', help='List existing projects'
@@ -942,7 +1124,7 @@ def main():
         help='Base directory for projects (default: from config)'
     )
     project_list_parser.set_defaults(func=project_list_command)
-    
+
     # Delete subcommand
     project_delete_parser = project_subparsers.add_parser(
         'delete', help='Delete a project'
@@ -959,7 +1141,7 @@ def main():
         help='Force delete without confirmation'
     )
     project_delete_parser.set_defaults(func=project_delete_command)
-    
+
     # Set default routing function for project command
     project_parser.set_defaults(func=project_command)
 
@@ -970,7 +1152,7 @@ def main():
     story_subparsers = story_parser.add_subparsers(
         dest='story_command', help='Story management commands'
     )
-    
+
     # Story create subcommand
     story_create_parser = story_subparsers.add_parser(
         'create', help='Create a new story from template'
@@ -983,7 +1165,7 @@ def main():
         help='Project name to create story in'
     )
     story_create_parser.add_argument(
-        '--story-id', 
+        '--story-id',
         help='Story ID (auto-generated if not provided)'
     )
     story_create_parser.add_argument(
@@ -999,7 +1181,7 @@ def main():
         help='Feature branch suffix (default: story-id only)'
     )
     story_create_parser.set_defaults(story_func=story_create_command)
-    
+
     # Story delete subcommand
     story_delete_parser = story_subparsers.add_parser(
         'delete', help='Delete an existing story'
@@ -1012,7 +1194,7 @@ def main():
         help='Force delete without confirmation'
     )
     story_delete_parser.set_defaults(story_func=story_delete_command)
-    
+
     # Story workspace subcommand
     story_workspace_parser = story_subparsers.add_parser(
         'workspace', help='Create workspace for an existing story'
@@ -1029,7 +1211,7 @@ def main():
         help='Base directory for workspaces (default: from config)'
     )
     story_workspace_parser.set_defaults(story_func=story_workspace_command)
-    
+
     # Set default routing function for story command
     story_parser.set_defaults(func=story_command)
 
