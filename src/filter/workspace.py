@@ -10,8 +10,10 @@ from typing import Any, Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .config import get_workspaces_directory, get_templates_directory, get_kanban_directory, find_filter_directory
+from .command_utils import run_git_command, CommandResult
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def render_template(template_path: str, context: dict = None) -> str:
@@ -430,11 +432,24 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
         raise RuntimeError(f"Failed to delete workspace directory {workspace_dir}: {e}")
 
 
+def _validate_git_repository(project_dir: Path) -> bool:
+    """Validate that a directory is a git repository.
+    
+    Args:
+        project_dir: Path to check
+        
+    Returns:
+        True if valid git repository, False otherwise
+    """
+    git_dir = project_dir / ".git"
+    return git_dir.exists() and project_dir.is_dir()
+
+
 def cleanup_git_worktree(workspace_dir: Path, workspace_name: str) -> None:
     """Clean up git worktree and branch for a workspace.
     
     Args:
-        workspace_dir: Path to the workspace directory
+        workspace_dir: Path to the workspace directory  
         workspace_name: Name of the workspace (used as branch name)
     """
     worktree_path = workspace_dir / "workspace" / workspace_name
@@ -443,38 +458,46 @@ def cleanup_git_worktree(workspace_dir: Path, workspace_name: str) -> None:
         logger.debug(f"No worktree found at {worktree_path}")
         return
     
+    # Find the project directory (parent of .filter directory)
+    filter_dir = workspace_dir.parent.parent  # .filter/workspaces -> .filter
+    project_dir = filter_dir.parent           # .filter -> project root
+    
+    if not _validate_git_repository(project_dir):
+        logger.warning(f"Project directory {project_dir} is not a valid git repository - skipping worktree cleanup")
+        return
+    
+    logger.info(f"Cleaning up git worktree and branch: {workspace_name}", 
+               extra={'workspace_name': workspace_name, 'worktree_path': str(worktree_path)})
+    
     try:
-        # Find the project directory (parent of .filter/workspaces)
-        project_dir = workspace_dir.parent.parent
-        
-        logger.info(f"Removing git worktree: {workspace_name}")
-        
         # Remove the worktree
-        subprocess.run(
-            ["git", "worktree", "remove", str(worktree_path)],
+        result = run_git_command(
+            ["worktree", "remove", str(worktree_path)],
             cwd=project_dir,
-            check=True,
-            capture_output=True,
-            text=True
+            check=False
         )
         
+        if result.success:
+            logger.info(f"Successfully removed git worktree: {workspace_name}")
+        else:
+            logger.warning(f"Failed to remove git worktree {workspace_name}: {result.stderr}")
+            return
+        
         # Delete the branch (optional - user might want to keep it)
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", workspace_name],
-                cwd=project_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Deleted branch: {workspace_name}")
-        except subprocess.CalledProcessError:
-            logger.info(f"Branch {workspace_name} was not deleted (might be checked out elsewhere)")
+        result = run_git_command(
+            ["branch", "-D", workspace_name],
+            cwd=project_dir,
+            check=False
+        )
+        
+        if result.success:
+            logger.info(f"Successfully deleted branch: {workspace_name}")
+        else:
+            logger.info(f"Branch {workspace_name} was not deleted (might be checked out elsewhere): {result.stderr}")
             
-    except subprocess.CalledProcessError as e:
-        logger.warning(f"Failed to clean up git worktree {workspace_name}: {e.stderr if e.stderr else str(e)}")
     except Exception as e:
-        logger.warning(f"Failed to clean up git worktree {workspace_name}: {e}")
+        logger.error(f"Unexpected error during git worktree cleanup for {workspace_name}: {e}",
+                    extra={'workspace_name': workspace_name, 'error': str(e)})
 
 
 def create_git_worktree(project_dir: Path, workspace_dir: Path, workspace_name: str) -> None:
@@ -488,56 +511,48 @@ def create_git_worktree(project_dir: Path, workspace_dir: Path, workspace_name: 
     Raises:
         RuntimeError: If git operations fail
     """
-    import os
-    
     worktree_path = workspace_dir / "workspace" / workspace_name
     
+    # Validate git repository
+    if not _validate_git_repository(project_dir):
+        raise RuntimeError(f"Project directory {project_dir} is not a valid git repository")
+    
+    logger.info(f"Creating git worktree for workspace: {workspace_name}",
+               extra={'workspace_name': workspace_name, 'worktree_path': str(worktree_path), 'project_dir': str(project_dir)})
+    
     try:
-        # Ensure the project directory is a git repository
-        git_dir = project_dir / ".git"
-        if not git_dir.exists():
-            raise RuntimeError(f"Project directory {project_dir} is not a git repository")
-        
-        logger.info(f"Creating git worktree {workspace_name} at {worktree_path}")
-        
-        # Create worktree with new branch
-        # Use -b to create a new branch based on current branch
-        result = subprocess.run(
-            ["git", "worktree", "add", "-b", workspace_name, str(worktree_path)],
+        # Try to create worktree with new branch first
+        result = run_git_command(
+            ["worktree", "add", "-b", workspace_name, str(worktree_path)],
             cwd=project_dir,
-            check=True,
-            capture_output=True,
-            text=True
+            check=False
         )
         
-        logger.info(f"Git worktree created successfully at {worktree_path}")
-        logger.info(f"Created and checked out branch: {workspace_name}")
+        if result.success:
+            logger.info(f"Successfully created git worktree with new branch: {workspace_name}")
+            return
         
-    except subprocess.CalledProcessError as e:
         # Handle case where branch already exists
-        if "already exists" in (e.stderr or ""):
-            logger.info(f"Branch {workspace_name} already exists, creating worktree with existing branch")
-            try:
-                # Try to create worktree with existing branch
-                subprocess.run(
-                    ["git", "worktree", "add", str(worktree_path), workspace_name],
-                    cwd=project_dir,
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-                logger.info(f"Git worktree created with existing branch: {workspace_name}")
-            except subprocess.CalledProcessError as e2:
-                error_msg = f"Failed to create worktree with existing branch: {e2.stderr if e2.stderr else str(e2)}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
+        if "already exists" in result.stderr:
+            logger.info(f"Branch {workspace_name} already exists, attempting to create worktree with existing branch")
+            
+            result = run_git_command(
+                ["worktree", "add", str(worktree_path), workspace_name],
+                cwd=project_dir,
+                check=False
+            )
+            
+            if result.success:
+                logger.info(f"Successfully created git worktree with existing branch: {workspace_name}")
+                return
+            else:
+                raise RuntimeError(f"Failed to create worktree with existing branch {workspace_name}: {result.stderr}")
         else:
-            error_msg = f"Git worktree creation failed: {e.stderr if e.stderr else str(e)}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            raise RuntimeError(f"Git worktree creation failed: {result.stderr}")
+            
     except Exception as e:
-        error_msg = f"Failed to create git worktree: {e}"
-        logger.error(error_msg)
+        error_msg = f"Unexpected error creating git worktree for {workspace_name}: {e}"
+        logger.error(error_msg, extra={'workspace_name': workspace_name, 'error': str(e)})
         raise RuntimeError(error_msg)
 
 
