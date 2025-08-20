@@ -45,8 +45,11 @@ services:
 {% if story_path %}
       - STORY_PATH={{ story_path }}
 {% endif %}
-{% if git_worktree_path %}
-      - GIT_WORKTREE_PATH={{ git_worktree_path }}
+{% if git_repo_path %}
+      - GIT_REPO_PATH={{ git_repo_path }}
+{% endif %}
+{% if git_url %}
+      - PROJECT_GIT_URL={{ git_url }}
 {% endif %}
     restart: unless-stopped
     tty: true

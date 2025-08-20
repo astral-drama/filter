@@ -6,10 +6,56 @@ import shutil
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from urllib.parse import urlparse
 
 from .config import get_projects_directory, get_kanban_directory
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_git_url(url: str) -> bool:
+    """Validate git repository URL format.
+    
+    Args:
+        url: Git repository URL to validate
+        
+    Returns:
+        True if valid URL format, False otherwise
+    """
+    if not url:
+        return True  # Optional field
+    
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ('http', 'https', 'git', 'ssh')
+    except Exception:
+        return False
+
+
+def _validate_project_config(config: Dict[str, Any]) -> List[str]:
+    """Validate project configuration has required fields and valid values.
+    
+    Args:
+        config: Project configuration dictionary
+        
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    errors = []
+    
+    # Validate git URL if present
+    git_url = config.get('git_url', '')
+    if git_url and not _validate_git_url(git_url):
+        errors.append(f"Invalid git repository URL format: {git_url}")
+    
+    # Validate required metadata fields are present
+    if not config.get('name'):
+        errors.append("Missing required field: name")
+    
+    if not config.get('prefix'):
+        errors.append("Missing required field: prefix")
+    
+    return errors
 
 
 def generate_project_prefix(project_name: str, target_length: int = 5) -> str:
@@ -109,7 +155,7 @@ def create_project_config(
 
 
 def load_project_config(project_dir: Path) -> Optional[Dict[str, Any]]:
-    """Load project configuration from project.yaml.
+    """Load project configuration from .filter/config.yaml.
     
     Args:
         project_dir: Path to project directory
@@ -117,17 +163,51 @@ def load_project_config(project_dir: Path) -> Optional[Dict[str, Any]]:
     Returns:
         Project configuration dictionary or None if not found
     """
-    config_file = project_dir / 'project.yaml'
-    
-    if not config_file.exists():
+    filter_config_file = project_dir / '.filter' / 'config.yaml'
+    if not filter_config_file.exists():
         return None
     
     try:
-        with open(config_file, 'r') as f:
+        with open(filter_config_file, 'r') as f:
             config = yaml.safe_load(f)
-        return config
+        
+        # Extract project-specific configuration and combine with metadata
+        project_config = {}
+        
+        # Load metadata for basic project info
+        metadata_file = project_dir / '.filter' / 'metadata.yaml'
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = yaml.safe_load(f)
+                    if metadata:
+                        project_config.update(metadata)
+            except yaml.YAMLError as e:
+                logger.warning(f"Error loading metadata from {metadata_file}: {e}")
+                # Continue without metadata
+            except Exception as e:
+                logger.warning(f"Unexpected error loading metadata from {metadata_file}: {e}")
+                # Continue without metadata
+        
+        # Add git URL from config
+        if 'git' in config and 'repository_url' in config['git']:
+            project_config['git_url'] = config['git']['repository_url']
+        
+        # Add project details from config
+        if 'project' in config:
+            project_config.update(config['project'])
+        
+        # Validate the final configuration
+        validation_errors = _validate_project_config(project_config)
+        if validation_errors:
+            for error in validation_errors:
+                logger.error(f"Configuration validation error in {project_dir}: {error}")
+            return None
+        
+        return project_config
+        
     except yaml.YAMLError as e:
-        logger.error(f"Error loading project config from {config_file}: {e}")
+        logger.error(f"Error loading project config from {filter_config_file}: {e}")
         return None
 
 

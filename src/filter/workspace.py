@@ -178,10 +178,8 @@ def create_workspace(
     if story_context:
         context.update(story_context)
         
-        # Add git worktree path if workspace name is available
-        if 'workspace_name' in story_context:
-            worktree_path = f"/workspace/{story_context['workspace_name']}"
-            context['git_worktree_path'] = worktree_path
+        # Add git repository path for container access
+        context['git_repo_path'] = "/workspace/repo"
 
     # Additional ports for specific templates
     if template_name == "python":
@@ -434,8 +432,8 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
     logger.info(f"Deleting workspace: {workspace_name}")
     
     try:
-        # Clean up git worktree if it exists
-        cleanup_git_worktree(workspace_dir, workspace_name)
+        # Clean up git repository if it exists
+        cleanup_git_repository(workspace_dir, workspace_name)
         
         shutil.rmtree(workspace_dir)
         logger.info(f"Workspace {workspace_name} deleted successfully from {workspace_dir}")
@@ -473,114 +471,88 @@ def _validate_git_repository(project_dir: Path) -> bool:
     return git_dir.exists() and project_dir.is_dir()
 
 
-def cleanup_git_worktree(workspace_dir: Path, workspace_name: str) -> None:
-    """Clean up git worktree and branch for a workspace.
+def cleanup_git_repository(workspace_dir: Path, workspace_name: str) -> None:
+    """Clean up git repository clone for a workspace.
     
     Args:
         workspace_dir: Path to the workspace directory  
-        workspace_name: Name of the workspace (used as branch name)
+        workspace_name: Name of the workspace
     """
-    worktree_path = workspace_dir / "workspace" / workspace_name
+    repo_path = workspace_dir / "workspace" / "repo"
     
-    if not worktree_path.exists():
-        logger.debug(f"No worktree found at {worktree_path}")
+    if not repo_path.exists():
+        logger.debug(f"No repository found at {repo_path}")
         return
     
-    # Find the project directory (parent of .filter directory)
-    filter_dir = workspace_dir.parent.parent  # .filter/workspaces -> .filter
-    project_dir = filter_dir.parent           # .filter -> project root
-    
-    if not _validate_git_repository(project_dir):
-        logger.warning(f"Project directory {project_dir} is not a valid git repository - skipping worktree cleanup")
-        return
-    
-    logger.info(f"Cleaning up git worktree and branch: {workspace_name}", 
-               extra={'workspace_name': workspace_name, 'worktree_path': str(worktree_path)})
+    logger.info(f"Cleaning up git repository for workspace: {workspace_name}", 
+               extra={'workspace_name': workspace_name, 'repo_path': str(repo_path)})
     
     try:
-        # Remove the worktree
-        result = run_git_command(
-            ["worktree", "remove", str(worktree_path)],
-            cwd=project_dir,
-            check=False
-        )
-        
-        if result.success:
-            logger.info(f"Successfully removed git worktree: {workspace_name}")
-        else:
-            logger.warning(f"Failed to remove git worktree {workspace_name}: {result.stderr}")
-            return
-        
-        # Delete the branch (optional - user might want to keep it)
-        result = run_git_command(
-            ["branch", "-D", workspace_name],
-            cwd=project_dir,
-            check=False
-        )
-        
-        if result.success:
-            logger.info(f"Successfully deleted branch: {workspace_name}")
-        else:
-            logger.info(f"Branch {workspace_name} was not deleted (might be checked out elsewhere): {result.stderr}")
+        # Simply remove the entire repository directory
+        import shutil
+        shutil.rmtree(repo_path)
+        logger.info(f"Successfully removed git repository for workspace: {workspace_name}")
             
     except Exception as e:
-        logger.error(f"Unexpected error during git worktree cleanup for {workspace_name}: {e}",
+        logger.error(f"Unexpected error during git repository cleanup for {workspace_name}: {e}",
                     extra={'workspace_name': workspace_name, 'error': str(e)})
 
 
-def create_git_worktree(project_dir: Path, workspace_dir: Path, workspace_name: str) -> None:
-    """Create a git worktree for the story workspace.
+def clone_git_repository(workspace_dir: Path, git_url: str, workspace_name: str) -> None:
+    """Clone git repository into workspace for story development.
     
     Args:
-        project_dir: Path to the main git repository (project directory)
         workspace_dir: Path to the workspace directory
+        git_url: Git repository URL to clone
         workspace_name: Unique workspace name to use as branch name
         
     Raises:
         RuntimeError: If git operations fail
     """
-    worktree_path = workspace_dir / "workspace" / workspace_name
+    repo_path = workspace_dir / "workspace" / "repo"
     
-    # Validate git repository
-    if not _validate_git_repository(project_dir):
-        raise RuntimeError(f"Project directory {project_dir} is not a valid git repository")
-    
-    logger.info(f"Creating git worktree for workspace: {workspace_name}",
-               extra={'workspace_name': workspace_name, 'worktree_path': str(worktree_path), 'project_dir': str(project_dir)})
+    logger.info(f"Cloning git repository for workspace: {workspace_name}",
+               extra={'workspace_name': workspace_name, 'git_url': git_url, 'repo_path': str(repo_path)})
     
     try:
-        # Try to create worktree with new branch first
+        # Clone the repository (full clone, not shallow)
         result = run_git_command(
-            ["worktree", "add", "-b", workspace_name, str(worktree_path)],
-            cwd=project_dir,
+            ["clone", git_url, str(repo_path)],
+            check=False
+        )
+        
+        if not result.success:
+            raise RuntimeError(f"Git clone failed: {result.stderr}")
+        
+        logger.info(f"Successfully cloned repository for workspace: {workspace_name}")
+        
+        # Create and checkout story branch
+        result = run_git_command(
+            ["checkout", "-b", workspace_name],
+            cwd=repo_path,
             check=False
         )
         
         if result.success:
-            logger.info(f"Successfully created git worktree with new branch: {workspace_name}")
-            return
-        
-        # Handle case where branch already exists
-        if "already exists" in result.stderr:
-            logger.info(f"Branch {workspace_name} already exists, attempting to create worktree with existing branch")
-            
+            logger.info(f"Successfully created and checked out branch: {workspace_name}")
+        else:
+            # Branch might already exist, try to check it out
+            logger.info(f"Branch {workspace_name} may exist, attempting to check out")
             result = run_git_command(
-                ["worktree", "add", str(worktree_path), workspace_name],
-                cwd=project_dir,
+                ["checkout", workspace_name],
+                cwd=repo_path,
                 check=False
             )
             
             if result.success:
-                logger.info(f"Successfully created git worktree with existing branch: {workspace_name}")
-                return
+                logger.info(f"Successfully checked out existing branch: {workspace_name}")
             else:
-                raise RuntimeError(f"Failed to create worktree with existing branch {workspace_name}: {result.stderr}")
-        else:
-            raise RuntimeError(f"Git worktree creation failed: {result.stderr}")
+                logger.warning(f"Could not create or checkout branch {workspace_name}: {result.stderr}")
+                logger.info(f"Repository cloned successfully, staying on default branch")
             
     except Exception as e:
-        error_msg = f"Unexpected error creating git worktree for {workspace_name}: {e}"
-        logger.error(error_msg, extra={'workspace_name': workspace_name, 'error': str(e)})
+        error_msg = f"Unexpected error cloning git repository for {workspace_name}: {e}"
+        logger.error(error_msg, extra={'workspace_name': workspace_name, 'git_url': git_url, 'error': str(e)})
         raise RuntimeError(error_msg)
 
 
@@ -657,7 +629,8 @@ def create_story_workspace(
         'project_name': project_name,
         'story_name': story_name,
         'story_path': story_path,
-        'kanban_directory': str(kanban_dir)
+        'kanban_directory': str(kanban_dir),
+        'git_url': git_url
     }
     
     # Determine base directory for story workspace
@@ -684,12 +657,15 @@ def create_story_workspace(
         story_context=story_context
     )
     
-    # Create git worktree for the workspace
-    try:
-        create_git_worktree(project_dir, workspace_dir, workspace_name)
-    except RuntimeError as e:
-        logger.warning(f"Failed to create git worktree: {e}")
-        logger.info("Workspace created without git worktree - you can work with files directly")
+    # Clone git repository for the workspace
+    if git_url:
+        try:
+            clone_git_repository(workspace_dir, git_url, workspace_name)
+        except RuntimeError as e:
+            logger.warning(f"Failed to clone git repository: {e}")
+            logger.info("Workspace created without git repository - you can work with files directly")
+    else:
+        logger.info("No git URL configured for project - workspace created without git repository")
     
     logger.info(f"Project: {project_name}")
     logger.info(f"Story file: {story_path}")
