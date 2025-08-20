@@ -4,7 +4,7 @@ services:
     container_name: postgres_{{ workspace_name }}
     environment:
       POSTGRES_USER: claude
-      POSTGRES_PASSWORD: claudepassword321
+      POSTGRES_PASSWORD: {{ postgres_password }}
       POSTGRES_DB: claude
     ports:
       - "{{ postgres_port }}:5432"
@@ -27,11 +27,11 @@ services:
 {% endif %}
       - ../../home:/home/claude
     environment:
-      - DATABASE_URL=postgresql://claude:claudepassword321@postgres:5432/claude
+      - DATABASE_URL=postgresql://claude:{{ postgres_password }}@postgres:5432/claude
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=claude
-      - POSTGRES_PASSWORD=claudepassword321
+      - POSTGRES_PASSWORD={{ postgres_password }}
       - POSTGRES_DB=claude
       - CLAUDE_HOST_PORT={{ claude_port }}
       - CLAUDE_INTERNAL_PORT=8000
@@ -44,6 +44,9 @@ services:
 {% endif %}
 {% if story_path %}
       - STORY_PATH={{ story_path }}
+{% endif %}
+{% if git_worktree_path %}
+      - GIT_WORKTREE_PATH={{ git_worktree_path }}
 {% endif %}
     restart: unless-stopped
     tty: true

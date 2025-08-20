@@ -5,6 +5,8 @@ import shutil
 import socket
 import subprocess
 import yaml
+import secrets
+import string
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -163,14 +165,23 @@ def create_workspace(
     postgres_port = find_available_port(5433)
     claude_port = find_available_port(8001)
     
+    # Generate secure database password for this workspace
+    postgres_password = _generate_secure_password(24)
+    
     context.update({
         "postgres_port": postgres_port,
-        "claude_port": claude_port
+        "claude_port": claude_port,
+        "postgres_password": postgres_password
     })
     
     # Add story context if provided
     if story_context:
         context.update(story_context)
+        
+        # Add git worktree path if workspace name is available
+        if 'workspace_name' in story_context:
+            worktree_path = f"/workspace/{story_context['workspace_name']}"
+            context['git_worktree_path'] = worktree_path
 
     # Additional ports for specific templates
     if template_name == "python":
@@ -430,6 +441,23 @@ def delete_workspace(workspace_name: str, base_dir: Optional[Path] = None, force
         logger.info(f"Workspace {workspace_name} deleted successfully from {workspace_dir}")
     except Exception as e:
         raise RuntimeError(f"Failed to delete workspace directory {workspace_dir}: {e}")
+
+
+def _generate_secure_password(length: int = 16) -> str:
+    """Generate a secure random password for database access.
+    
+    Args:
+        length: Password length (default: 16)
+        
+    Returns:
+        Secure random password string
+    """
+    # Use alphanumeric characters (avoiding special chars for database URLs)
+    alphabet = string.ascii_letters + string.digits
+    password = ''.join(secrets.choice(alphabet) for _ in range(length))
+    
+    logger.debug(f"Generated secure password of length {length}")
+    return password
 
 
 def _validate_git_repository(project_dir: Path) -> bool:
