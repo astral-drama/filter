@@ -170,6 +170,24 @@ def test_git_worktree_creation():
     cleanup_git_worktree(test_workspace_dir, test_workspace_name)
 ```
 
+### Code Review Policy
+
+**✅ Always request code review before substantial commits:**
+- **REQUIRED**: Ask user for code review approval before committing changes that are more than a few lines
+- **Definition**: "Substantial" means changes affecting multiple files, new features, security-related changes, or refactoring
+- **Process**: Use git diff to show changes, explain what was modified and why, then ask: "Should I commit these changes?"
+- **Examples of substantial changes**: New functions, security fixes, template modifications, workflow changes
+- **Simple changes**: Small bug fixes, documentation updates, single-line changes can be committed without review
+
+**Example workflow:**
+```
+1. Make changes
+2. Run: git diff --name-only && git diff
+3. Explain: "I've made changes to X, Y, Z to accomplish [goal]"  
+4. Ask: "Can you review these changes before I commit them?"
+5. Wait for approval before git commit
+```
+
 ---
 
 ## Quick Workspace Creation
